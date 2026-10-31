@@ -1,0 +1,6 @@
+art/
+frames/
+.venv/
+build/
+dist/
+*.spec
