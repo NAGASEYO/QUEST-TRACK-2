@@ -1,0 +1,2413 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>흑월 저택 - 할로윈의 밤</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Nanum+Pen+Script&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { width: min(100vw, 133.33vh); height: auto; max-height: 100vh; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="960"></canvas>
+<script>
+'use strict';
+/* =========================================================
+   흑월 저택 - 할로윈의 밤
+   2D 탑뷰 공포 탐색 게임 (참고: 아오오니, 이브)
+   조작: 방향키/WASD 이동, Shift 달리기, Space/Enter/Z 조사·대화 넘기기
+   ========================================================= */
+
+const cv = document.getElementById('c');
+let ctx = cv.getContext('2d');
+const MAIN = ctx;
+const W = 640, H = 480, T = 32, COLS = 20, ROWS = 15, SC = 2;
+cv.width = W * SC; cv.height = H * SC;
+const FONT = '"Gowun Batang","Malgun Gothic","Apple SD Gothic Neo",serif';
+const NFONT = '"Nanum Pen Script","Gowun Batang","Malgun Gothic",cursive';
+
+// ---------- 도구 ----------
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; }
+function pp(w, a, b) { const c = w.charCodeAt(w.length - 1); if (c < 0xAC00 || c > 0xD7A3) return a; return ((c - 0xAC00) % 28) ? a : b; }
+function hx(c) { if (c[0] === 'r') return c.match(/[\d.]+/g).slice(0, 3).map(Number); c = c.replace('#', ''); if (c.length === 3) c = c.split('').map(s => s + s).join(''); return [parseInt(c.slice(0, 2), 16), parseInt(c.slice(2, 4), 16), parseInt(c.slice(4, 6), 16)]; }
+function sh(c, a) { const [r, g, b] = hx(c); const f = v => Math.round(clamp(a >= 0 ? v + (255 - v) * a : v * (1 + a), 0, 255)); return `rgb(${f(r)},${f(g)},${f(b)})`; }
+function R(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+function C(x, y, r, c) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, Math.abs(r), 0, Math.PI * 2); ctx.fill(); }
+function E(x, y, rx, ry, c, rot) { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y, Math.abs(rx), Math.abs(ry), rot || 0, 0, Math.PI * 2); ctx.fill(); }
+function P(pts, c) { ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]); ctx.closePath(); ctx.fill(); }
+function L(x1, y1, x2, y2, c, w) { ctx.strokeStyle = c; ctx.lineWidth = w || 1; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+function limb(x1, y1, x2, y2, w, c) { ctx.lineCap = 'round'; L(x1, y1, x2, y2, c, w); ctx.lineCap = 'butt'; }
+function vg(y, h, c1, c2) { const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, c1); g.addColorStop(1, c2); return g; }
+function hg(x, w, c1, c2) { const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, c1); g.addColorStop(1, c2); return g; }
+function rg(x, y, r, c1, c2, x0, y0) { const g = ctx.createRadialGradient(x0 != null ? x0 : x, y0 != null ? y0 : y, 0, x, y, r); g.addColorStop(0, c1); g.addColorStop(1, c2); return g; }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function box(x, y, w, h, c) { // 위가 밝고 아래가 어두운 입체 상자
+  ctx.fillStyle = vg(y, h, sh(c, 0.12), sh(c, -0.3)); ctx.fillRect(x, y, w, h);
+  R(x, y, w, 0.8, sh(c, 0.32)); R(x, y + h - 0.8, w, 0.8, sh(c, -0.55)); R(x, y, 0.7, h, sh(c, 0.1)); R(x + w - 0.7, y, 0.7, h, sh(c, -0.45));
+}
+function grain(x, y, w, h, a) { ctx.strokeStyle = `rgba(0,0,0,${a || 0.12})`; ctx.lineWidth = 0.4; for (let gy = y + 1.5; gy < y + h; gy += 2.2) { ctx.beginPath(); for (let gx = x; gx <= x + w; gx += 3) { const yy = gy + Math.sin((gx + gy * 7) / 7) * 0.4; gx === x ? ctx.moveTo(gx, yy) : ctx.lineTo(gx, yy); } ctx.stroke(); } }
+function softShadow(x, y, rx, ry, a) { ctx.save(); ctx.translate(x, y); ctx.scale(1, ry / rx); ctx.fillStyle = rg(0, 0, rx, `rgba(0,0,0,${a || 0.5})`, 'rgba(0,0,0,0)'); ctx.fillRect(-rx, -rx, rx * 2, rx * 2); ctx.restore(); }
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+const WOOD = '#5a3a22', DWOOD = '#3a2414', GOLD = '#b08a3a', SKIN = '#f0cfae';
+
+// =========================================================
+// 설정 (갑툭튀 세기) - 이 브라우저에만 저장
+// =========================================================
+let MILD = false;
+try { MILD = localStorage.getItem('hm_mild') === '1'; } catch (e) { }
+function saveMild() { try { localStorage.setItem('hm_mild', MILD ? '1' : '0'); } catch (e) { } }
+
+// =========================================================
+// 소리 (Web Audio 로 직접 합성)
+// =========================================================
+let AC = null, MG = null, NB = null, AMBG = null;
+function duck(on) { if (!AMBG) return; AMBG.gain.setTargetAtTime(on ? 0.0001 : 0.05, AC.currentTime, on ? 0.08 : 0.6); }
+function initAudio() {
+  if (AC) return;
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; return; }
+  MG = AC.createGain(); MG.gain.value = 0.7; MG.connect(AC.destination);
+  NB = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  const d = NB.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const o1 = AC.createOscillator(), o2 = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
+  o1.type = o2.type = 'sawtooth'; o1.frequency.value = 55; o2.frequency.value = 55.7;
+  f.type = 'lowpass'; f.frequency.value = 170; g.gain.value = 0.05;
+  o1.connect(f); o2.connect(f); f.connect(g); g.connect(MG); o1.start(); o2.start(); AMBG = g;
+}
+function env(g, t, a, peak, dur) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); }
+function tone(f, dur, type, vol, delay, f2) {
+  if (!AC) return; const t = AC.currentTime + (delay || 0);
+  const o = AC.createOscillator(), g = AC.createGain(); o.type = type || 'sine';
+  o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  env(g, t, 0.01, vol || 0.2, dur); o.connect(g); g.connect(MG); o.start(t); o.stop(t + dur + 0.05);
+}
+function noise(dur, vol, freq, ftype, delay, q) {
+  if (!AC) return; const t = AC.currentTime + (delay || 0);
+  const s = AC.createBufferSource(); s.buffer = NB; s.loop = true;
+  const f = AC.createBiquadFilter(); f.type = ftype || 'lowpass'; f.frequency.value = freq || 1000; if (q) f.Q.value = q;
+  const g = AC.createGain(); env(g, t, 0.005, vol || 0.2, dur);
+  s.connect(f); f.connect(g); g.connect(MG); s.start(t, Math.random()); s.stop(t + dur + 0.05);
+}
+const SFX = {
+  step() { noise(0.05, 0.035, 500 + Math.random() * 300); },
+  runStep() { noise(0.07, 0.07, 320 + Math.random() * 200); tone(70, 0.06, 'sine', 0.06); },
+  knock() { for (let i = 0; i < 3; i++) { noise(0.1, 0.35, 220, 'lowpass', i * 0.55); tone(90, 0.12, 'sine', 0.3, i * 0.55, 60); } },
+  creak() { tone(220, 1.6, 'sawtooth', 0.03, 0, 140); tone(233, 1.6, 'sawtooth', 0.02, 0.2, 150); },
+  scare() { // 갑툭튀: 낮은 쿵 + 금속성 비명 + 노이즈
+    const v = MILD ? 0.2 : 1;
+    tone(75, 1.0, 'sine', 0.9 * v, 0, 26); tone(150, 0.5, 'square', 0.22 * v, 0, 45);
+    [1760, 1865, 2217, 2349].forEach(f => tone(f, 0.7, 'sawtooth', 0.045 * v, 0, f * 0.45));
+    noise(0.3, 0.9 * v, 3500, 'highpass'); noise(0.9, 0.5 * v, 900, 'bandpass', 0.05, 1.5);
+    SFX.scream(1.2);
+  },
+  pick() { tone(784, 0.15, 'triangle', 0.15); tone(1175, 0.3, 'triangle', 0.12, 0.1); },
+  paper() { noise(0.25, 0.08, 3000, 'highpass'); },
+  door() { tone(150, 0.45, 'sawtooth', 0.04, 0, 90); noise(0.25, 0.08, 400); },
+  locked() { tone(160, 0.08, 'square', 0.07); tone(120, 0.12, 'square', 0.07, 0.1); },
+  unlock() { tone(600, 0.05, 'square', 0.07); tone(900, 0.08, 'square', 0.07, 0.08); },
+  tick() { tone(1200, 0.03, 'square', 0.04); },
+  slam() { noise(0.6, MILD ? 0.4 : 0.9, 250); tone(55, 0.6, 'sine', MILD ? 0.3 : 0.7, 0, 35); },
+  sting() { [233, 247, 349, 370].forEach(f => tone(f, 1.4, 'sawtooth', MILD ? 0.025 : 0.05)); noise(0.8, MILD ? 0.08 : 0.2, 1500, 'bandpass'); },
+  heart() { tone(62, 0.15, 'sine', 0.35, 0, 40); tone(56, 0.18, 'sine', 0.28, 0.18, 35); },
+  thunder() { noise(1.8, MILD ? 0.25 : 0.55, 200); noise(0.4, MILD ? 0.15 : 0.35, 1200); },
+  match() { noise(0.3, 0.2, 2500, 'highpass'); tone(200, 0.4, 'sine', 0.05); },
+  chime() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 1.4, 'sine', 0.07, i * 0.18)); },
+  music() { [392, 392, 440, 392, 523, 494, 392, 392, 440, 392, 587, 523].forEach((f, i) => tone(f * (1 - Math.random() * 0.035), 0.55, 'triangle', 0.08, i * 0.36)); },
+  scream(v) {
+    if (!AC) return; v = (v == null ? 1 : v) * (MILD ? 0.25 : 1); const t = AC.currentTime;
+    for (let i = 0; i < 4; i++) {
+      const o = AC.createOscillator(), g = AC.createGain(), l = AC.createOscillator(), lg = AC.createGain();
+      o.type = 'sawtooth'; const b = 500 + i * 130;
+      o.frequency.setValueAtTime(b, t); o.frequency.exponentialRampToValueAtTime(b * 2.2, t + 0.12); o.frequency.exponentialRampToValueAtTime(b * 0.6, t + 1.3);
+      l.frequency.value = 25 + i * 7; lg.gain.value = 60; l.connect(lg); lg.connect(o.frequency);
+      env(g, t, 0.02, 0.12 * v, 1.4); o.connect(g); g.connect(MG); o.start(t); l.start(t); o.stop(t + 1.5); l.stop(t + 1.5);
+    }
+    noise(1.2, 0.5 * v, 1800, 'bandpass', 0, 0.7); noise(0.5, 0.6 * v, 300);
+  },
+  ambient() {
+    const k = (Math.random() * 3) | 0;
+    if (k === 0) tone(90 + Math.random() * 40, 0.8, 'sawtooth', 0.025, 0, 60);
+    else if (k === 1) { for (let i = 0; i < 3; i++) noise(0.12, 0.12, 180, 'lowpass', i * 0.35); }
+    else noise(1.5, 0.04, 900 + Math.random() * 600, 'bandpass', 0, 4);
+  }
+};
+
+// =========================================================
+// 입력 (한글 입력 상태에서도 되도록 e.code 사용)
+// =========================================================
+const keys = {}, pressed = new Set();
+addEventListener('keydown', e => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  if (!keys[e.code]) pressed.add(e.code);
+  keys[e.code] = true; initAudio();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+const isDown = (...ks) => ks.some(k => keys[k]);
+const hit = (...ks) => ks.some(k => pressed.has(k));
+const OKK = ['Enter', 'Space', 'KeyZ', 'NumpadEnter'];
+
+// =========================================================
+// 이야기 글
+// =========================================================
+const PAGES = {
+  1: { title: '소연의 일기 ①', text: '10월 1일\n의사 선생님이 올해도 밖에 나가면 안 된대.\n다른 애들은 할로윈에 사탕 받으러 다니는데,\n나는 창문으로 구경만 한다.\n\n엄마가 대신 커다란 호박을 사 오셨다.\n얼굴은 내가 직접 파 줄 거야!' },
+  2: { title: '소연의 일기 ②', text: '10월 15일\n호박에 얼굴을 다 팠다! 눈은 세모, 입은 지그재그.\n이름은 「잭」. 동화책에 나오는 등불 아저씨 이름이다.\n\n그리고 비밀 하나.\n서재 금고 비밀번호는 내 생일이다.\n할로윈이랑 같은 날! 헤헤.' },
+  3: { title: '소연의 일기 ③', text: '10월 28일\n밤마다 잭이 조금씩 움직이는 것 같다.\n하나도 안 무섭다. 잭은 내 친구니까.\n\n잭이 다락에 가 보고 싶대.\n다락문 여는 갈고리 막대는 엄마 그림 뒤에 숨겨 놨다.\n아빠 그림은 건드리면 안 돼. 아빠는 화가 많으니까.' },
+  4: { title: '소연의 일기 ④', text: '10월 30일\n기침이 멈추지 않는다. 내일이 할로윈인데.\n\n잭한테 소원을 빌었다.\n「내가 없어도, 누군가랑 계속 놀아 줘.」\n잭이 고개를 끄덕였다. 진짜로.\n\n잭에게 쓴 마지막 편지는\n엄마가 홀의 괘종시계 안에 넣어 주기로 했다.' },
+  5: { title: '소연의 마지막 편지', text: '잭에게.\n\n내가 먼저 가게 되면 울지 마.\n그리고 아무나 붙잡아 두지 마.\n그건 노는 게 아니야.\n\n할로윈 밤, 다락의 등불을 켜 줘.\n그 불빛을 따라서 꼭 데리러 올게.\n약속해.\n\n― 소연' },
+};
+const BOOKS = [
+  '「호박 잘 기르는 법」… 평범한 원예 책이다.',
+  '어린이 동화책 「잭 오 랜턴」.\n천국에도 지옥에도 가지 못한 잭은, 호박 등불 하나를 들고 영원히 세상을 떠돌았다고 한다…',
+  '두꺼운 의학 책. 「어린이 폐 질환」 쪽에 책갈피가 잔뜩 꽂혀 있다.',
+  '「죽은 자와 이야기하는 법」… 중간 페이지가 전부 뜯겨 나갔다.',
+  '앨범이다. 사진마다 소녀가 같은 호박을 안고 웃고 있다.',
+];
+
+// =========================================================
+// 지도
+// =========================================================
+function O(t, x, y, p) { return Object.assign({ t, x, y, w: 1, h: 1 }, p || {}); }
+const ROOM = (floor, door) => {
+  const r = ['####################', '####################'];
+  for (let y = 2; y < 14; y++) r.push(y === 7 ? door : '#' + floor.repeat(18) + '#');
+  r.push('####################'); return r;
+};
+
+const MAPS = {
+  hall: {
+    name: '현관 홀', floor: '.', wall: '#4a2a3a', wp: 'damask', dark: 0.78,
+    grid: [
+      '####################',
+      '#########D##########',
+      '#..................#',
+      '#..................#',
+      '#...cccccccccccc...#',
+      '#...cccccccccccc...#',
+      'D...cccccccccccc...D',
+      '#...cccccccccccc...#',
+      '#...cccccccccccc...#',
+      '#..................#',
+      '#..................#',
+      '#..................#',
+      '#..................#',
+      '#..................#',
+      '#########DD#########',
+    ],
+    doors: {
+      '9,1': { to: 'corridor', tx: 9, ty: 13, item: '2층 열쇠', id: 'stairs', style: 'stairsUp', lockMsg: '계단 입구의 철창문이 잠겨 있다. 열쇠가 필요하다.' },
+      '0,6': { to: 'dining', tx: 18, ty: 7 },
+      '19,6': { to: 'library', tx: 1, ty: 7, item: '서재 열쇠', id: 'library', lockMsg: '서재 문이 잠겨 있다. 열쇠 구멍 둘레에 호박 무늬가 새겨져 있다.' },
+      '9,14': { front: true, style: 'front', side: 'L' },
+      '10,14': { front: true, style: 'front', side: 'R' },
+    },
+    objs: [
+      O('painting', 4, 1, { w: 2, wall: true, art: 'moon', txt: '달빛 아래의 저택을 그린 그림.\n다락 창문에만 주황색 불빛이 칠해져 있다.' }),
+      O('mirror', 14, 1, { wall: true, use: () => EV.mirror() }),
+      O('gate', 9, 1, { wall: true, gone: 'open_stairs' }),
+      O('clock', 2, 2, { solid: true, use: () => EV.hallClock() }),
+      O('plant', 16, 2, { solid: true, txt: '말라 죽은 화분. 흙에서 달큰한 냄새가 난다… 사탕 냄새?' }),
+      O('stand', 12, 2, { solid: true, txt: '작은 탁자 위에서 촛불이 타고 있다.\n30년 동안 버려진 집인데… 누가 켜 둔 걸까?' }),
+      O('candle', 12, 2, { sy: 3.01, light: 95, ly: 0.1 }),
+      O('pumpkin', 1, 2, { solid: true, light: 60, txt: '얼굴을 판 호박등. 안에서 촛불이 흔들린다.' }),
+      O('pumpkin', 18, 2, { solid: true, light: 60, txt: '호박등이 히죽 웃고 있다.' }),
+      O('pumpkin', 1, 13, { solid: true, light: 60, txt: '호박등이다. 누군가 할로윈 장식을 해 둔 모양이다.' }),
+      O('pumpkin', 18, 13, { solid: true, light: 60, txt: '호박등의 눈이 나를 따라 움직이는 것 같다…' }),
+    ],
+  },
+
+  dining: {
+    name: '식당', floor: '.', wall: '#3a4030', wp: 'stripe', dark: 0.82,
+    grid: ROOM('.', 'D..................D'),
+    doors: {
+      '19,7': { to: 'hall', tx: 1, ty: 6 },
+      '0,7': { never: true, msg: '주방 문. 안쪽에서 잠겨 있다.\n…문 너머에서 무언가 바닥을 긁는 소리가 난다.' },
+    },
+    objs: [
+      O('painting', 8, 1, { w: 3, wall: true, art: 'family', txt: ['가족 초상화. 엄마, 아빠, 그리고 호박을 안은 어린 딸.', '…딸의 얼굴만 날카로운 무언가로 긁혀 있다.'] }),
+      O('shelf', 12, 1, { w: 2, wall: true, txt: '선반 위의 유리병들. 라벨에 「사탕」, 「사탕」, 「사탕」…\n전부 같은 글씨다.' }),
+      O('cabinet', 2, 2, { w: 2, solid: true, use: () => EV.cabinet() }),
+      O('closet', 16, 2, { w: 2, solid: true, hidespot: true }),
+      O('longtable', 5, 6, { w: 10, h: 2, solid: true, txt: ['기다란 식탁에 음식이 차려져 있다. 전부 썩어서 무엇이었는지 알 수 없다.', '접시마다 사탕 껍질이 수북하다.'] }),
+      O('chair', 6, 5, { solid: true, dir: 'down' }), O('chair', 9, 5, { solid: true, dir: 'down' }), O('chair', 12, 5, { solid: true, dir: 'down' }),
+      O('chair', 6, 8, { solid: true, dir: 'up' }), O('chair', 9, 8, { solid: true, dir: 'up' }), O('chair', 12, 8, { solid: true, dir: 'up' }),
+      O('candle', 7, 6, { sy: 8.01, light: 95, ly: 0.3 }), O('candle', 13, 6, { sy: 8.01, light: 95, ly: 0.3 }),
+      O('page', 10, 6, { h: 2, sy: 8.02, gone: 'p1', use: () => EV.page(1) }),
+      O('plant', 1, 13, { solid: true, txt: '시든 화분. 잎사귀 하나가 아직 초록색이다.' }),
+    ],
+  },
+
+  library: {
+    name: '서재', floor: '.', wall: '#2e3046', wp: 'stripe', dark: 0.82,
+    grid: [
+      '####################', '####################',
+      '#..................#', '#..................#', '#..................#', '#..................#',
+      '#.....ccccccc......#',
+      'D.....ccccccc......#',
+      '#.....ccccccc......#',
+      '#.....ccccccc......#',
+      '#..................#', '#..................#', '#..................#', '#..................#',
+      '####################',
+    ],
+    doors: { '0,7': { to: 'hall', tx: 18, ty: 6 } },
+    objs: [
+      O('window', 10, 1, { w: 2, wall: true, light: 55, ly: 1.4, cool: true, txt: '창밖에 비가 내리고 있다. 숲이 새까맣다.' }),
+      O('bookshelf', 2, 2, { w: 4, solid: true, use: () => EV.books() }),
+      O('bookshelf', 6, 2, { w: 3, solid: true, use: () => EV.books() }),
+      O('bookshelf', 13, 2, { w: 5, solid: true, use: () => EV.books() }),
+      O('desk', 8, 7, { w: 3, solid: true, txt: '낡은 책상. 서랍은 모두 비어 있다.' }),
+      O('candle', 8, 7, { sy: 8.01, light: 95, ly: 0.3 }),
+      O('page', 9, 7, { sy: 8.02, gone: 'p2', use: () => EV.page(2) }),
+      O('chair', 9, 8, { solid: true, dir: 'up' }),
+      O('armchair', 14, 7, { solid: true, txt: '푹신한 안락의자. …아직 온기가 남아 있다.' }),
+      O('globe', 4, 8, { solid: true, txt: '지구본. 이 저택이 있는 자리에 빨간 동그라미가 그려져 있다.' }),
+      O('safe', 17, 11, { solid: true, use: () => EV.safe() }),
+      O('bookshelf', 2, 12, { w: 5, solid: true, use: () => EV.books() }),
+      O('plant', 18, 2, { solid: true, txt: '말라 죽은 화분.' }),
+    ],
+  },
+
+  corridor: {
+    name: '2층 복도', floor: '.', wall: '#43282e', wp: 'damask', dark: 0.86,
+    grid: [
+      '####################',
+      '##########D#########',
+      '#..................#',
+      '#..................#',
+      'D..................D',
+      '#..................#',
+      '#...############...#',
+      '#...############...#',
+      '#...############...#',
+      '#...############...#',
+      '#...############...#',
+      '#..................#',
+      '#..................#',
+      '#..................#',
+      '#########D##########',
+    ],
+    doors: {
+      '0,4': { to: 'gallery', tx: 18, ty: 7 },
+      '19,4': { to: 'child', tx: 1, ty: 7 },
+      '9,14': { to: 'hall', tx: 9, ty: 2, style: 'stairsDown' },
+      '10,1': { to: 'attic', tx: 9, ty: 12, style: 'hatch', custom: () => EV.hatch() },
+    },
+    objs: [
+      O('painting', 3, 1, { w: 2, wall: true, art: 'eyes', txt: '눈만 그려진 그림.\n…눈동자가 나를 따라 움직인다.' }),
+      O('painting', 13, 1, { w: 2, wall: true, art: 'eyes', txt: '또 눈 그림이다. 방금… 깜빡였다.' }),
+      O('ladder', 10, 1, { h: 2, need: 'ladder', sy: 1.6 }),
+      O('closet', 16, 2, { w: 2, solid: true, hidespot: true }),
+      O('painting', 6, 10, { w: 2, wall: true, art: 'tree', txt: '말라 죽은 나무 그림. 가지마다 호박이 매달려 있다.' }),
+      O('painting', 12, 10, { w: 2, wall: true, art: 'eyes', txt: '눈 그림. 이 집 사람들은 왜 이런 그림을…' }),
+      O('candelabra', 1, 13, { solid: true, light: 100, ly: -0.2 }),
+      O('candelabra', 18, 13, { solid: true, light: 100, ly: -0.2 }),
+    ],
+  },
+
+  gallery: {
+    name: '갤러리', floor: 'g', wall: '#34343e', wp: 'plain', dark: 0.78,
+    grid: ROOM('g', '#ggggggggggggggggggD'),
+    doors: { '19,7': { to: 'corridor', tx: 1, ty: 4 } },
+    objs: [
+      O('painting', 2, 1, { w: 2, wall: true, art: 'mom', use: () => EV.mom() }),
+      O('painting', 6, 1, { w: 2, wall: true, art: 'dad', use: () => EV.dad() }),
+      O('painting', 10, 1, { w: 2, wall: true, art: 'girl', use: () => EV.girl() }),
+      O('painting', 14, 1, { w: 2, wall: true, art: 'lady', use: () => EV.lady() }),
+      O('candelabra', 1, 2, { solid: true, light: 100, ly: -0.2 }),
+      O('candelabra', 17, 2, { solid: true, light: 100, ly: -0.2 }),
+      O('vase', 9, 7, { solid: true, txt: ['받침대 위 꽃병에 붉은 장미가 한 송이 꽂혀 있다.', '꽃잎이 한 장, 또 한 장 떨어진다… 왠지 남의 일 같지 않다.'] }),
+      O('statue', 14, 9, { solid: true, txt: '머리가 없는 석상. 목 부분이 방금 부서진 것처럼 하얗다.' }),
+      O('bench', 4, 10, { w: 3, solid: true, txt: '관람객용 긴 의자. 먼지 위에 작은 손자국이 찍혀 있다.' }),
+      O('page', 11, 11, { gone: 'p3', use: () => EV.page(3) }),
+      O('curtain', 1, 12, { solid: true, hidespot: true }),
+    ],
+  },
+
+  child: {
+    name: '소연의 방', floor: 'p', wall: '#4a3446', wp: 'star', dark: 0.82,
+    grid: [
+      '####################', '####################',
+      '#pppppppppppppppppp#', '#pppppppppppppppppp#', '#pppppppppppppppppp#', '#pppppppppppppppppp#',
+      '#ppppppccccccpppppp#',
+      'Dppppppccccccpppppp#',
+      '#ppppppccccccpppppp#',
+      '#ppppppccccccpppppp#',
+      '#pppppppppppppppppp#', '#pppppppppppppppppp#', '#pppppppppppppppppp#', '#pppppppppppppppppp#',
+      '####################',
+    ],
+    doors: { '0,7': { to: 'corridor', tx: 18, ty: 4 } },
+    objs: [
+      O('closet', 2, 2, { w: 2, solid: true, hidespot: true, tint: '#5a3a3a' }),
+      O('window', 5, 1, { w: 2, wall: true, light: 55, ly: 1.4, cool: true, use: () => EV.childWindow() }),
+      O('musicbox', 8, 2, { solid: true, use: () => EV.musicbox() }),
+      O('drawing', 10, 1, { wall: true, txt: '크레용 그림. 소녀와 호박 머리 친구가 손을 잡고 있다.\n「잭이랑 나 ♥」' }),
+      O('doll', 12, 2, { solid: true, use: () => EV.doll() }),
+      O('bed', 15, 2, { w: 2, h: 3, solid: true, use: () => EV.bed() }),
+      O('blocks', 9, 10, { txt: '장난감 블록이 쌓여 있다. 「놀·아·줘」' }),
+      O('chest', 3, 12, { w: 2, solid: true, use: () => EV.chest() }),
+      O('desk', 15, 11, { w: 2, solid: true, txt: '작은 책상. 크레용 낙서가 가득하다. 「잭」 「잭」 「잭」…' }),
+      O('candle', 15, 11, { sy: 12.01, light: 95, ly: 0.3 }),
+      O('page', 16, 11, { sy: 12.02, gone: 'p4', use: () => EV.page(4) }),
+    ],
+  },
+
+  attic: {
+    name: '다락', floor: 'a', wall: '#3a2a1c', wp: 'plank', dark: 0.88,
+    grid: [
+      '####################',
+      '####################',
+      '###aaaaaaaaaaaaaa###',
+      '##aaaaaaaaaaaaaaaa##',
+      '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#',
+      '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#', '#aaaaaaaaaaaaaaaaaa#',
+      '#########D##########',
+    ],
+    doors: { '9,14': { to: 'corridor', tx: 10, ty: 2, style: 'ladderDown' } },
+    objs: [
+      O('window', 9, 1, { w: 2, wall: true, light: 45, ly: 1.4, cool: true, round: true, txt: '동그란 창문. 아래로 저택 정문이 내려다보인다.' }),
+      O('altar', 8, 3, { w: 4, h: 2, solid: true, light: 200, lightIf: 'lit', ly: 0.6, use: () => EV.altar() }),
+      O('candle', 7, 4, { solid: true, lit: 'lit', light: 60, ly: 0 }),
+      O('candle', 12, 4, { solid: true, lit: 'lit', light: 60, ly: 0 }),
+      O('jun', 4, 7, { w: 2, solid: true, gone: 'junGone', use: () => EV.jun() }),
+      O('box', 15, 4, { solid: true, txt: '먼지 쌓인 상자. 「소연 장난감」이라고 적혀 있다.' }),
+      O('box', 16, 4, { solid: true, txt: '상자 안에 작은 마녀 모자가 들어 있다. 한 번도 쓰지 않은 것 같다.' }),
+      O('box', 15, 5, { solid: true, txt: '빈 상자다.' }),
+      O('box', 2, 11, { solid: true, txt: '낡은 상자. 「할로윈 장식」' }),
+      O('box', 2, 12, { solid: true, txt: '상자 틈에서 사탕 하나가 굴러 나왔다. 30년 된 사탕이다.' }),
+      O('rocker', 14, 10, { use: () => EV.rocker() }),
+      O('web', 3, 2, {}), O('web', 16, 2, { flip: true }),
+    ],
+  },
+};
+for (const id in MAPS) MAPS[id].id = id;
+
+// =========================================================
+// 상태
+// =========================================================
+let mode = 'warn', modeT = 0, now = 0;
+let S = null, F = {};
+let CP = null;
+let scriptDepth = 0, dialog = null, choice = null, lock = null, toastMsg = null;
+let scare = null, flashFx = null, fade = 0, fadeT = null, shakeT = 0, lightT = 0;
+let actors = [], M = { active: false };
+let bg = null, doorCD = 0, stepT = 0, ambT = 8, heartT = 0, walkT = 0, moving = false, running = false, END = null;
+let afterT = 0, lastScare = 'jack';
+const PUFFS = [];
+
+function newState() { return { map: 'hall', x: 9.5 * T, y: 12.5 * T + 6, dir: 'up', inv: [], flags: {}, pages: 0, time: 0, hidden: null }; }
+const has = n => S.inv.includes(n);
+const vis = o => (!o.gone || !F[o.gone]) && (!o.need || F[o.need]);
+const N = text => ({ narr: true, text });
+const busy = () => scriptDepth > 0 || dialog || choice || lock;
+
+function objective() {
+  if (!F.started) return '';
+  if (F.finalChase) return '현관으로 도망쳐!';
+  if (!F.open_library && !has('서재 열쇠')) return '서쪽 식당을 조사해 보자.';
+  if (!F.open_library) return '서재 열쇠로 동쪽 서재 문을 열자.';
+  if (!F.open_stairs && !has('2층 열쇠')) return F.p2 ? '서재 금고를 열자.' : '서재를 조사하자.';
+  if (!F.open_stairs) return '2층 열쇠로 홀 북쪽 계단의 철창문을 열자.';
+  if (!F.hook || !F.matches) {
+    const a = []; if (!F.hook) a.push('갤러리(서쪽)'); if (!F.matches) a.push('아이 방(동쪽)');
+    return '2층을 조사하자: ' + a.join(', ');
+  }
+  if (!F.ladder) return '갈고리 막대로 복도 천장의 다락문을 열자.';
+  if (S.map === 'attic') return '호박등에 불을 붙이자.';
+  return '다락으로 올라가 준을 찾자.';
+}
+
+// =========================================================
+// 대화 · 선택 · 다이얼 · 연출
+// =========================================================
+function norm(l) { if (typeof l === 'string') return { text: l }; if (Array.isArray(l)) return { who: l[0], text: l[1] }; return l; }
+function say(...lines) { return new Promise(res => { dialog = { lines: lines.map(norm), i: 0, c: 0, res }; }); }
+function choose(q, opts) { return new Promise(res => { choice = { q, opts, i: 0, res }; }); }
+function numLock() { return new Promise(res => { lock = { d: [0, 0, 0, 0], i: 0, res }; }); }
+function toast(text, sec) { toastMsg = { text, t: sec || 3.5 }; }
+function tweenFade(to, ms) { return new Promise(res => { fadeT = { from: fade, to, ms, t: 0, res }; }); }
+async function jumpscare(type) {
+  SFX.scare(); shakeT = MILD ? 0.25 : 1.0; lastScare = type;
+  await new Promise(res => { scare = { type, ghost: pickGhost(type), t: 0, dur: MILD ? 0.9 : 1.35, inv: false, res }; });
+  duck(false); afterT = MILD ? 0 : 1;
+  for (let i = 0; i < 4; i++) setTimeout(() => SFX.heart(), 150 + i * 520);
+}
+function flash() { lightT = 0.35; return new Promise(res => { flashFx = { t: 0, dur: 0.75, res }; }); }
+function moveActor(a, x, y, sp) { return new Promise(res => { a.tx = x; a.ty = y; a.sp = sp; a.res = res; }); }
+function fadeActor(a, to, ms) { return new Promise(res => { a.fa = { from: a.alpha, to, ms, t: 0, res }; }); }
+async function give(name) { S.inv.push(name); SFX.pick(); await say(`【${name}】${pp(name, '을', '를')} 얻었다.`); }
+async function run(fn) { scriptDepth++; try { await fn(); } catch (e) { console.error(e); } finally { scriptDepth = Math.max(0, scriptDepth - 1); } }
+
+function saveCP() { const h = S.hidden; S.hidden = null; CP = JSON.stringify(S); S.hidden = h; }
+function loadCP() {
+  S = JSON.parse(CP); F = S.flags; S.hidden = null;
+  M = { active: false }; actors = []; dialog = choice = lock = null; scare = flashFx = null; fadeT = null;
+  scriptDepth = 0; fade = 0; doorCD = 0; mode = 'play'; modeT = 0; afterT = 0; duck(false);
+  bg = renderBG(S.map);
+  const m = MAPS[S.map]; if (m.onEnter) run(m.onEnter);
+}
+
+// =========================================================
+// 쫓아오는 것 (잭)
+// =========================================================
+function startChase(o) {
+  M = {
+    active: true, x: (o.tx + 0.5) * T, y: (o.ty + 0.5) * T + 6, delay: o.delay != null ? o.delay : 1.2,
+    path: [], repath: 0, lost: 0, walk: 0, pending: null,
+    chase: { t: o.dur || 15, final: !!o.final, speed: o.speed || (o.final ? 127 : 115) }, // 115 = 하루가 걷는 속도
+  };
+  SFX.sting(); heartT = 0;
+}
+function endChase(msg) { M = { active: false }; if (msg) toast(msg, 4); saveCP(); }
+function caught() {
+  M = { active: false };
+  run(async () => { await jumpscare('jack'); mode = 'dead'; modeT = 0; });
+}
+const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function passGrid() {
+  const m = MAPS[S.map], g = new Array(COLS * ROWS);
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) g[y * COLS + x] = m.grid[y][x] !== '#';
+  for (const o of m.objs) if (o.solid && vis(o)) for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) g[y * COLS + x] = false;
+  return g;
+}
+function bfs(g, sx, sy, tx, ty) {
+  const s = sy * COLS + sx, tg = ty * COLS + tx; if (s === tg) return [];
+  const prev = new Int16Array(COLS * ROWS).fill(-1); prev[s] = s; const q = [s]; let h = 0;
+  while (h < q.length) {
+    const c = q[h++]; if (c === tg) break; const cx = c % COLS, cy = (c / COLS) | 0;
+    for (const [dx, dy] of D4) {
+      const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+      const n = ny * COLS + nx; if (prev[n] !== -1 || !g[n]) continue; prev[n] = c; q.push(n);
+    }
+  }
+  if (prev[tg] === -1) return null;
+  const path = []; let c = tg; while (c !== s) { path.push(c); c = prev[c]; } return path.reverse();
+}
+function updMonster(dt) {
+  if (!M.chase) return;
+  if (M.pending && M.pending.map === S.map) {
+    M.pending.t -= dt;
+    if (M.pending.t <= 0) { M.x = M.pending.x; M.y = M.pending.y; M.active = true; M.pending = null; M.delay = 0.3; M.path = []; M.repath = 0; SFX.sting(); }
+  }
+  if (!M.chase.final) { M.chase.t -= dt; if (M.chase.t <= 0) { endChase('…발소리가 멀어졌다. 잭이 사라진 것 같다.'); return; } }
+  if (!M.active) return;
+  if (M.delay > 0) { M.delay -= dt; return; }
+  let tx = S.x, ty = S.y;
+  if (S.hidden) {
+    const o = S.hidden;
+    if (M.grab != null) { // 숨는 걸 봤다: 곧장 와서 끄집어낸다
+      tx = (o.x + o.w / 2) * T; ty = (o.y + o.h) * T + 22; M.grab -= dt;
+      if (M.grab < 0.9 && !M.rattled) { M.rattled = 1; SFX.door(); shakeT = 0.5; } // 문이 덜컹
+      if (M.grab <= 0) { S.hidden = null; SFX.door(); caught(); return; }
+    } else {
+      M.lost += dt;
+      tx = (o.x + o.w / 2) * T + Math.sin(M.lost * 2) * 40; ty = (o.y + o.h) * T + 22;
+      if (M.lost > 2.6) { endChase('…잭은 아무것도 찾지 못하고 사라졌다.'); return; }
+    }
+  } else M.lost = 0;
+  M.repath -= dt;
+  if (M.repath <= 0) {
+    M.repath = 0.25; const g = passGrid();
+    const sx = clamp((M.x / T) | 0, 0, COLS - 1), sy = clamp((M.y / T) | 0, 0, ROWS - 1);
+    const gx = clamp((tx / T) | 0, 0, COLS - 1), gy = clamp((ty / T) | 0, 0, ROWS - 1);
+    g[gy * COLS + gx] = true; M.path = bfs(g, sx, sy, gx, gy) || [];
+  }
+  let mx, my; const dist = Math.hypot(tx - M.x, ty - M.y);
+  if (M.path.length === 0 || dist < T * 1.2) { mx = tx; my = ty; }
+  else {
+    const c = M.path[0]; mx = (c % COLS + 0.5) * T; my = (((c / COLS) | 0) + 0.5) * T + 6;
+    if (Math.hypot(mx - M.x, my - M.y) < 3 && M.path.length > 1) { M.path.shift(); const n = M.path[0]; mx = (n % COLS + 0.5) * T; my = (((n / COLS) | 0) + 0.5) * T + 6; }
+  }
+  const d = Math.hypot(mx - M.x, my - M.y);
+  if (d > 0.5) { const s = Math.min(d, M.chase.speed * dt); M.x += (mx - M.x) / d * s; M.y += (my - M.y) / d * s; M.walk += dt; }
+  if (!S.hidden && Math.hypot(S.x - M.x, S.y - M.y) < 20) caught();
+}
+
+// =========================================================
+// 이동 · 문 · 조사
+// =========================================================
+function placeMap(id, tx, ty) { PUFFS.length = 0; S.map = id; S.x = (tx + 0.5) * T; S.y = (ty + 0.5) * T + 6; bg = renderBG(id); }
+async function goTo(id, tx, ty) {
+  SFX.door(); await tweenFade(1, 180);
+  const chasing = !!M.chase; placeMap(id, tx, ty); actors = []; S.hidden = null;
+  if (chasing) { M.active = false; M.pending = { map: id, x: S.x, y: S.y, t: M.chase.final ? 1.8 : 2.3 }; }
+  else saveCP();
+  await tweenFade(0, 180);
+  const m = MAPS[id]; if (m.onEnter) await m.onEnter();
+}
+async function touchDoor(d) {
+  if (d.front) {
+    if (F.exitOpen) return EV.escape();
+    SFX.locked();
+    if (F.frontTry && !F.eyeScare && F.started) {
+      F.eyeScare = 1;
+      await jumpscare('eye');
+      await say(['하루', '허억…!!'], '문에 손을 대는 순간, 우편함 틈 너머에서 핏발 선 눈이 이쪽을 들여다보고 있었다.', '…다시 보니 틈은 새까맣기만 하다.'); SFX.knock();
+      doorCD = 1; return;
+    }
+    F.frontTry = 1;
+    await say('현관문이 꿈쩍도 하지 않는다. 밖에서 누군가 붙잡고 있는 것처럼…'); doorCD = 1; return;
+  }
+  if (d.never) { SFX.locked(); await say(d.msg); doorCD = 1; return; }
+  if (d.custom) { const ok = await d.custom(); if (!ok) { doorCD = 1; return; } }
+  if (d.item && !F['open_' + d.id]) {
+    if (has(d.item)) {
+      SFX.unlock(); await say(`${d.item}${pp(d.item, '으로', '로')} 문을 열었다.`);
+      F['open_' + d.id] = 1; S.inv = S.inv.filter(n => n !== d.item);
+    } else { SFX.locked(); await say(d.lockMsg); doorCD = 1; return; }
+  }
+  await goTo(d.to, d.tx, d.ty);
+}
+function moveP(mx, my) {
+  if (!mx && !my) return;
+  const nx = S.x + mx, ny = S.y + my, l = nx - 9, r = nx + 9, t = ny - 10, b = ny + 3, m = MAPS[S.map];
+  let wall = false, door = null;
+  for (let ty = Math.floor(t / T); ty <= Math.floor(b / T); ty++) for (let tx = Math.floor(l / T); tx <= Math.floor(r / T); tx++) {
+    const ch = (m.grid[ty] || '')[tx];
+    if (ch === undefined || ch === '#') wall = true;
+    else if (ch === 'D') { if (m.doors[tx + ',' + ty]) door = m.doors[tx + ',' + ty]; else wall = true; }
+  }
+  if (door) { if (doorCD <= 0 && scriptDepth === 0) run(() => touchDoor(door)); return; }
+  if (wall) return;
+  for (const o of m.objs) if (o.solid && vis(o) && r > o.x * T + 2 && l < (o.x + o.w) * T - 2 && b > o.y * T + 4 && t < (o.y + o.h) * T) return;
+  S.x = nx; S.y = ny;
+}
+function findObj() {
+  const dx = { left: -1, right: 1, up: 0, down: 0 }[S.dir], dy = { up: -1, down: 1, left: 0, right: 0 }[S.dir];
+  const px = S.x + dx * 20, py = S.y - 6 + dy * 22, m = MAPS[S.map];
+  const inside = o => px >= o.x * T - 4 && px < (o.x + o.w) * T + 4 && py >= o.y * T - 4 && py < (o.y + o.h) * T + 4;
+  for (let pass = 0; pass < 2; pass++) for (let i = m.objs.length - 1; i >= 0; i--) {
+    const o = m.objs[i]; if (!vis(o) || !(o.use || o.txt || o.hidespot)) continue;
+    if ((pass === 0) !== (o.t === 'page')) continue;
+    if (inside(o)) return o;
+  }
+  return null;
+}
+async function interact(o) {
+  if (o.hidespot) {
+    if (M.chase && M.chase.final) { await say('숨을 시간이 없다! 현관으로 도망쳐야 해!'); return; }
+    const c = M.chase ? 0 : await choose(o.t === 'curtain' ? '커튼 뒤에 숨을까?' : '안에 숨을까?', ['숨는다', '그만둔다']);
+    if (c === 0) {
+      S.hidden = o; SFX.door();
+      if (M.active && Math.hypot(S.x - M.x, S.y - M.y) < T * 3.5) M.grab = 1.6; // 잭이 너무 가까우면 숨는 걸 들킨다
+    }
+    return;
+  }
+  if (o.use) return o.use(o);
+  if (o.txt) return say(...[].concat(o.txt));
+}
+
+// =========================================================
+// 사건들
+// =========================================================
+const EV = {
+  async prologue() {
+    await say(
+      N('10월 31일, 할로윈 밤.'),
+      N('마을 뒷산의 「흑월 저택」.\n30년 전 할로윈 무렵, 이 집의 어린 딸이 병으로 세상을 떠난 뒤로\n아무도 살지 않는 곳.'),
+      N('소문에 따르면, 할로윈 밤에 저택 다락의 호박등에 불을 붙이면\n소원이 하나 이루어진다고 한다.'),
+      N('그리고… 그 저택에 들어간 사람은\n가끔 돌아오지 않는다고도.'));
+    const jun = { kind: 'jun', x: 10.5 * T, y: 12.5 * T + 6, dir: 'up', alpha: 1 }; actors.push(jun);
+    await tweenFade(0, 1200);
+    await say(['준', '와… 진짜 들어왔다. 하루, 너 쫄았지?'], ['하루', '…안 쫄았거든.'],
+      ['준', '근데 이상하다. 버려진 집인데 호박등에 불이 켜져 있네.'],
+      ['준', '소문이 진짜인가 봐! 다락은 2층 위겠지? 내가 먼저 올라가 볼게!'], ['하루', '야, 같이 가―']);
+    await moveActor(jun, 9.5 * T, 2.4 * T, 160); await moveActor(jun, 9.5 * T, 1.5 * T, 100);
+    actors = actors.filter(a => a !== jun);
+    await wait(500); SFX.slam(); shakeT = 0.5;
+    await say('쾅――!!', '등 뒤에서 현관문이 저절로 닫혔다.');
+    SFX.locked(); await say('철컥. 계단 입구의 철창문까지 잠겨 버렸다.');
+    await wait(700); SFX.scream(0.35);
+    await say(['준', '으아아아악――!!']);
+    await say(['하루', '준?! 준아!!'], ['하루', '…장난이면 지금 그만해. 하나도 안 웃겨.'],
+      '대답은 없다. 2층 어딘가에서 무언가를 질질 끄는 소리만 들려온다.',
+      ['하루', '(…준을 찾아야 해. 2층으로 올라갈 방법을 찾자.)']);
+    F.started = 1; saveCP();
+    toast('방향키·WASD 이동 · Shift 달리기 · Space 조사하기', 7);
+  },
+
+  async page(n) {
+    SFX.paper(); F['p' + n] = 1; S.pages++;
+    await say({ note: PAGES[n].title, text: PAGES[n].text });
+    toast(`일기를 모았다 (${S.pages}/5)`);
+    if (n === 2 && !F.thunder) {
+      F.thunder = 1; await wait(300); SFX.thunder(); await flash();
+      await say(['하루', '…!'], '번개가 번쩍이는 순간, 창밖에 키 큰 그림자가 서 있었다.', '다시 보니 아무도 없다.',
+        ['하루', '(소연이 생일이 할로윈… 10월 31일이라는 거지?)']);
+    }
+    if (n === 4) await say(['하루', '(홀의 괘종시계… 아까 손이 닿지 않던 그 종이인가?)']);
+  },
+
+  async cabinet() {
+    if (!F.cabScare) {
+      await say('먼지 쌓인 찬장. 안쪽에서 달그락, 달그락 소리가 난다…');
+      if (await choose('찬장을 열어 볼까?', ['연다', '그만둔다'])) return;
+      F.cabScare = 1; await jumpscare('face');
+      await say(['하루', '…헉… 허억…'], '다시 보니 찬장 안에는 깨진 접시뿐이다. 잘못 본 걸까?');
+    }
+    if (F.gotLibKey) return say('깨진 접시뿐이다.');
+    saveCP();
+    await say('깨진 접시 사이에 호박 모양 손잡이가 달린 열쇠가 끼어 있다.');
+    F.gotLibKey = 1; await give('서재 열쇠');
+    await wait(400); SFX.door();
+    await say('끼이이익…', '잠겨 있던 주방 문이 저절로 열렸다.', ['하루', '……!!']);
+    startChase({ tx: 1, ty: 7, dur: 14 });
+    toast('도망쳐! 오른쪽 위 옷장에 숨을 수 있다 (Space)', 5);
+  },
+
+  async books() {
+    F.bookI = (F.bookI || 0) % BOOKS.length;
+    await say(BOOKS[F.bookI]); F.bookI++;
+  },
+
+  async safe() {
+    if (F.safeOpen) return say('금고는 비어 있다.');
+    await say('묵직한 금고. 네 자리 숫자 다이얼이 달려 있다.');
+    const code = await numLock(); if (code === null) return;
+    if (code === '1031') {
+      SFX.unlock(); F.safeOpen = 1;
+      await say('딸깍― 금고가 열렸다!', '안에는 낡은 열쇠 하나와, 호박을 안은 소녀의 사진이 들어 있다.');
+      await give('2층 열쇠');
+      await jumpscare('jack');
+      await say(['하루', '히익…!!'], '고개를 드는 순간, 바로 코앞에 그것의 얼굴이 있었다.', '…눈을 비비자 아무것도 없다.');
+    } else {
+      SFX.locked();
+      await say('…열리지 않는다.', F.p2 ? '일기에 힌트가 있었던 것 같은데…' : '이 방 어딘가에 힌트가 있을지도 모른다.');
+    }
+  },
+
+  async mirror() {
+    if (F.mirror) return say('거울에는 나만 비친다. …지금은.');
+    F.mirror = 1;
+    await say('먼지 낀 커다란 거울. 겁에 질린 내 얼굴이 비친다.');
+    await wait(200); SFX.sting(); await flash();
+    await say(['하루', '…!!'], '거울 속, 내 어깨 너머로 주황색 눈이 빛났다.', '돌아보니… 아무도 없다.');
+  },
+
+  async hallClock() {
+    if (F.p5) return say('바늘은 여전히 11시 59분에 멈춰 있다.');
+    if (has('갈고리 막대')) {
+      await say('갈고리 막대를 시계 안으로 밀어 넣어, 시계추 뒤에 끼어 있던 종이를 꺼냈다.');
+      return EV.page(5);
+    }
+    await say('커다란 괘종시계. 바늘은 11시 59분에 멈춰 있는데… 시계추만 혼자 흔들리고 있다.',
+      '시계추 뒤쪽 깊숙한 곳에 종이가 끼어 있다. 손이 닿지 않는다.', '긴 막대 같은 게 있으면 꺼낼 수 있을 것 같다.');
+  },
+
+  async hatch() {
+    if (F.ladder) return true;
+    if (has('갈고리 막대')) {
+      await say('천장에 다락으로 통하는 문이 있다.', '갈고리 막대로 손잡이를 걸어 힘껏 당겼다.');
+      SFX.door(); F.ladder = 1;
+      await say('끼기긱― 접이식 사다리가 내려왔다!');
+      return false;
+    }
+    await say('천장에 다락으로 통하는 문이 있다. 손잡이가 너무 높아서 닿지 않는다.', '긴 막대 같은 게 있으면 좋을 텐데.');
+    return false;
+  },
+
+  async mom() {
+    if (F.hook) return say('「어머니」 ― 다정하게 웃고 있는 여인의 초상화.');
+    await say('「어머니」 ― 다정하게 웃고 있는 여인의 초상화.', '액자가 벽에서 살짝 들떠 있다.');
+    if (await choose('그림 뒤를 살펴볼까?', ['살펴본다', '그만둔다'])) return;
+    saveCP();
+    await say('그림 뒤에 기다란 막대가 숨겨져 있었다. 끝에 갈고리가 달려 있다.');
+    F.hook = 1; await give('갈고리 막대');
+    await wait(500); SFX.door();
+    await say('끼이익― 갤러리 문이 천천히 열렸다.');
+    startChase({ tx: 18, ty: 7, dur: 15 });
+    toast('도망쳐! 왼쪽 아래 커튼 뒤에 숨을 수 있다 (Space)', 5);
+  },
+  async dad() {
+    await say('「아버지」 ― 무서운 눈으로 이쪽을 노려보는 남자의 초상화.');
+    if (F.dadScare) return say('…다시는 만지고 싶지 않다.');
+    if (await choose('그림을 만져 볼까?', ['만져 본다', '그만둔다'])) return;
+    F.dadScare = 1; await jumpscare('portrait');
+    await say(['하루', '으앗…!!'], '그림 속 남자의 입이 찢어질 듯 벌어져 있었다.', '…눈을 비비자, 그림은 원래대로 돌아와 있다.');
+  },
+  async girl() {
+    if (F.hook) return say('「소녀」 ― 호박을 안은 소녀가… 웃고 있다.', '아까는 분명 슬픈 표정이었는데.');
+    await say('「소녀」 ― 창가에 앉은 소녀의 그림. 호박을 꼭 안고 슬픈 표정을 짓고 있다.');
+  },
+  async lady() {
+    if (F.hook) return say('「붉은 옷의 여인」 ― …그림 속에 여인이 없다.', '빈 배경만 남아 있다. 어디로 간 걸까…');
+    await say('「붉은 옷의 여인」 ― 붉은 드레스의 여인이 액자 밖을 빤히 바라보고 있다.');
+  },
+
+  async childWindow() {
+    if (F.winScare) return say('창밖에는 아무도 없다. …여긴 2층인데.');
+    await say('창문에 하얗게 김이 서려 있다.', '마치 누군가 바깥에서 입김을 불고 있는 것처럼…');
+    if (await choose('창문을 닦고 내다볼까?', ['내다본다', '그만둔다'])) return;
+    F.winScare = 1; await jumpscare('hands');
+    await say(['하루', '…헉… 허억…'], '피 묻은 손바닥 수십 개가 유리창을 두드리고 있었다.', '…지금은 아무것도 없다. 여긴 2층인데.');
+  },
+  async doll() {
+    if (F.matches && !F.dollScare) {
+      F.dollScare = 1;
+      await jumpscare('doll');
+      await say(['하루', '으아악!!'], '인형의 금 간 얼굴이 눈앞으로 확 다가왔다.', '…인형은 의자에 얌전히 앉아 있다. 고개만 문 쪽으로 돌아간 채로.');
+      return;
+    }
+    if (F.matches) return say('…인형은 문 쪽을 보고 있다. 다시는 건드리지 말자.');
+    await say('낡은 도자기 인형. 단추로 된 눈 하나가 떨어져 있다.', '목에 이름표가 걸려 있다. 「소연이 친구 1호」\n…그럼 2호는?');
+  },
+  async musicbox() {
+    SFX.music();
+    await say('태엽을 감자 오르골이 울리기 시작했다.', '「생일 축하합니다」… 음이 조금씩 어긋나 있다.');
+  },
+  async bed() {
+    if (F.bedSeen) return say('작은 침대. 베개 옆에 곰 인형이 놓여 있다.');
+    await say('작은 침대. 이불이 사람 모양으로 불룩하다…');
+    if (await choose('이불을 걷어 볼까?', ['걷는다', '그만둔다'])) return;
+    F.bedSeen = 1; SFX.paper();
+    await say('…베개와 곰 인형뿐이다.', ['하루', '휴우…']);
+  },
+  async chest() {
+    if (F.matches) return say('크레용과 사탕 껍질뿐이다.');
+    await say('장난감 상자. 크레용, 사탕 껍질, 구슬… 그리고 성냥갑이 있다.');
+    F.matches = 1; await give('성냥');
+    await say('…방 밖 복도에서 삐걱, 하고 무언가 움직이는 소리가 났다.');
+  },
+
+  async rocker() {
+    if (F.rockerScare) return say('흔들의자는 이제 꼼짝도 하지 않는다.');
+    await say('흔들의자가 혼자서 삐걱, 삐걱 흔들리고 있다…');
+    if (await choose('흔들의자를 붙잡아 멈춰 볼까?', ['멈춘다', '그만둔다'])) return;
+    F.rockerScare = 1; await jumpscare('skull');
+    await say(['하루', '…!!'], '의자에 앉아 있던 무언가가 고개를 들었다.', '…의자는 비어 있다.');
+  },
+  async tableScare() {
+    await jumpscare('crawl');
+    await say(['하루', '으아악!!'], '식탁 밑에서 무언가가 기어 나와 발목을 붙잡으려 했다.', '…다시 보니 식탁보만 살랑살랑 흔들리고 있다.');
+  },
+  async hangScare() {
+    await jumpscare('hang');
+    await say(['하루', '히익…!'], '천장에서 거꾸로 매달린 얼굴이 내려다보고 있었다.', '올려다보니 아무것도 없다. 천장에 긁힌 자국만 남아 있다.');
+  },
+  async ladyScare() {
+    await jumpscare('lady');
+    await say(['하루', '……!!'], '붉은 옷의 여인이 바로 눈앞에서 웃고 있었다.', '눈을 깜빡이자 사라졌다. 바닥에 붉은 꽃잎만 흩어져 있다.');
+  },
+
+  async jun() {
+    await say(['하루', '준! 정신 차려!'], '…숨은 쉬고 있다. 하지만 아무리 흔들어도 깨어나지 않는다.',
+      '준의 손에 불 꺼진 성냥개비가 쥐어져 있다. 호박등에 불을 붙이려다 쓰러진 걸까?');
+  },
+  async altar() {
+    await say('커다란 호박등이 놓인 제단. 호박을 안고 웃는 소녀의 사진이 놓여 있다.', '사진 아래에 이름이 적혀 있다. 「소연」');
+    if (!has('성냥')) return say('호박등 안에 초가 들어 있다. 불을 붙일 것이 필요하다.');
+    if (S.pages < 5 && !F.altarHint) { F.altarHint = 1; await say(['하루', '(잠깐… 이 집에 대해 아직 모르는 게 있는 것 같아. 일기를 더 찾아볼까?)']); }
+    if (await choose('호박등에 불을 붙일까?', ['붙인다', '아직 아니다'])) return;
+    S.x = 10 * T; S.y = 6 * T + 6; S.dir = 'up';
+    saveCP();
+    if (S.pages >= 5) return EV.trueEnd();
+    return EV.finalChase();
+  },
+  async finalChase() {
+    SFX.match(); F.lit = 1;
+    await say('성냥을 그어 호박등 안의 초에 불을 붙였다.');
+    await wait(600); await say('…………'); SFX.sting(); shakeT = 0.6;
+    const j = { kind: 'jack', x: 3.5 * T, y: 4.5 * T + 6, alpha: 0, light: 70 }; actors.push(j);
+    await fadeActor(j, 1, 600);
+    await say(['???', '그건… 소연이의… 등불…'], ['???', '만지지 마… 소연이는… 나랑… 영원히 놀아야 해…!'],
+      ['하루', '(위험해…! 준을 데리고 도망쳐야 해!)']);
+    F.junGone = 1; F.exitOpen = 1; F.finalChase = 1; actors = [];
+    await say('하루는 쓰러진 준을 들쳐 업었다.', '그 순간, 아래층에서 현관문이 끼이익 열리는 소리가 들렸다!');
+    startChase({ tx: 3, ty: 4, final: true, delay: 0.8 });
+    toast('현관문이 열렸다! 1층 현관으로 도망쳐!', 6);
+  },
+  async trueEnd() {
+    SFX.match(); F.lit = 1;
+    await say('성냥을 그어 호박등 안의 초에 불을 붙였다.'); SFX.chime();
+    await wait(700);
+    await say('주황색 불빛이 다락을 가득 채운다.', '…그때, 어둠 속에서 무언가가 천천히 걸어 나왔다.');
+    const j = { kind: 'jack', x: 3.5 * T, y: 4.5 * T + 6, alpha: 0, light: 60 }; actors.push(j);
+    await fadeActor(j, 1, 900);
+    await moveActor(j, 7.6 * T, 6 * T + 6, 45);
+    await say(['???', '그건… 소연이의… 등불…'], ['하루', '…네가 잭이구나.'], ['잭', '……'],
+      ['하루', '소연이가 너한테 남긴 편지를 찾았어. 시계 안에 있었어.'],
+      ['하루', '「아무나 붙잡아 두지 마. 그건 노는 게 아니야.」'],
+      ['하루', '「할로윈 밤, 다락의 등불을 켜 줘. 그 불빛을 따라서 꼭 데리러 올게.」'],
+      ['하루', '30년 동안… 아무도 불을 켜 주지 않았던 거지?'], ['잭', '…소연이가… 온다고…?']);
+    await wait(600); SFX.chime();
+    const g = { kind: 'ghost', x: 10 * T, y: 5 * T + 14, alpha: 0, light: 100 }; actors.push(g);
+    await fadeActor(g, 0.85, 1600);
+    await say(['소녀', '잭. 오래 기다렸지?'], ['잭', '…소…연…'],
+      ['소연', '미안해. 혼자 두고 가서. 무서운 일도 시켜 버렸네.'],
+      ['소연', '이제 같이 가자. 올해는 우리도 사탕 받으러 가는 거야.']);
+    await moveActor(j, 9.2 * T, 5.4 * T, 30);
+    await say(['소연', '(하루를 돌아보며) 고마워. 네 친구는 곧 깨어날 거야.'], ['소연', '…해피 할로윈.']);
+    await Promise.all([fadeActor(g, 0, 2200), fadeActor(j, 0, 2200)]);
+    actors = [];
+    await say('두 개의 불빛이 손을 잡고, 창문 너머 달빛 속으로 사라졌다.');
+    await say(['준', '으… 하루…? 여기 어디야…?'], ['준', '이상한 꿈을 꿨어. 어떤 여자애가… 놀아 줘서 고맙다고…'], ['하루', '…집에 가자, 준.']);
+    await tweenFade(1, 1500);
+    endGame('true');
+  },
+  async escape() {
+    M = { active: false };
+    await tweenFade(1, 600);
+    await say(N('하루는 준을 업은 채 저택 밖으로 굴러 나왔다.'), N('등 뒤에서 현관문이 쾅, 닫혔다.'),
+      N('돌아보니 다락 창문에 주황색 불빛이 깜빡이고 있었다.'), N('마치… 아직 누군가를 기다리는 것처럼.'),
+      ['준', '으… 하루? 우리 왜 밖에 있어…? 아무것도 기억이 안 나…'], ['하루', '…아무것도 아니야. 집에 가자.']);
+    endGame('normal');
+  },
+};
+
+MAPS.corridor.onEnter = async () => {
+  if (!F.corridorSeen) {
+    F.corridorSeen = 1; await wait(600);
+    const j = { kind: 'jack', x: 19 * T, y: 12.5 * T + 6, alpha: 1, light: 60 }; actors.push(j); SFX.sting();
+    await moveActor(j, 13.5 * T, 12.5 * T + 6, 90); await fadeActor(j, 0, 400);
+    actors = actors.filter(a => a !== j);
+    await say(['하루', '……!!'], ['하루', '방금 그거… 뭐야? 머리가… 호박…?'], '발소리는 들리지 않았다.');
+  } else if (has('성냥') && !F.chase3 && !F.lit) {
+    F.chase3 = 1; await wait(500); SFX.door();
+    await say('천장 쪽에서 삐걱, 하고 소리가 울렸다.', '…무언가 내려온다!');
+    startChase({ tx: 10, ty: 2, dur: 16 });
+    toast('도망쳐! 복도 위쪽 옷장에 숨을 수 있다 (Space)', 5);
+  }
+};
+// 지나가기만 해도 터지는 갑툭튀 구역 (칸 단위)
+MAPS.dining.zones = [{ x: 5, y: 9, w: 10, h: 1, flag: 'tableScare', cond: () => F.p1, fn: () => EV.tableScare() }];
+MAPS.corridor.zones = [{ x: 1, y: 6, w: 3, h: 5, flag: 'hangScare', cond: () => F.corridorSeen, fn: () => EV.hangScare() }];
+MAPS.gallery.zones = [{ x: 3, y: 3, w: 11, h: 10, flag: 'ladyScare', cond: () => F.ladyArmed, fn: () => EV.ladyScare() }];
+MAPS.gallery.onEnter = async () => { if (F.hook && !M.chase) F.ladyArmed = 1; };
+function checkZones() {
+  const m = MAPS[S.map]; if (!m.zones || M.chase) return;
+  const tx = (S.x / T) | 0, ty = (S.y / T) | 0;
+  for (const z of m.zones) {
+    if (F[z.flag] || (z.cond && !z.cond())) continue;
+    if (tx >= z.x && tx < z.x + z.w && ty >= z.y && ty < z.y + z.h) { F[z.flag] = 1; run(z.fn); return; }
+  }
+}
+MAPS.attic.onEnter = async () => {
+  if (F.atticSeen) return;
+  F.atticSeen = 1;
+  await say('먼지와 거미줄투성이의 다락.', ['하루', '준!!'], '구석에 준이 쓰러져 있다.', '방 한가운데에는 커다란 호박등이 놓인 제단이 있다.');
+};
+
+function startGame() {
+  initAudio(); S = newState(); F = S.flags; M = { active: false }; actors = [];
+  mode = 'play'; modeT = 0; fade = 1; scriptDepth = 0; dialog = choice = lock = null; END = null;
+  bg = renderBG(S.map); saveCP(); run(EV.prologue);
+}
+function endGame(kind) { mode = 'end'; modeT = 0; END = kind; fade = 0; M = { active: false }; }
+
+// =========================================================
+// 업데이트
+// =========================================================
+function updTweens(dt) {
+  if (fadeT) { fadeT.t += dt * 1000; const k = Math.min(1, fadeT.t / fadeT.ms); fade = fadeT.from + (fadeT.to - fadeT.from) * k; if (k >= 1) { const r = fadeT.res; fadeT = null; r(); } }
+  for (const a of actors) {
+    if (a.res && a.tx != null) {
+      const dx = a.tx - a.x, dy = a.ty - a.y, d = Math.hypot(dx, dy);
+      if (d < 1) { a.x = a.tx; a.y = a.ty; a.tx = null; a.moving = false; const r = a.res; a.res = null; r(); }
+      else { const s = Math.min(d, a.sp * dt); a.x += dx / d * s; a.y += dy / d * s; a.walk = (a.walk || 0) + dt; a.moving = true; a.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); }
+    }
+    if (a.fa) { a.fa.t += dt * 1000; const k = Math.min(1, a.fa.t / a.fa.ms); a.alpha = a.fa.from + (a.fa.to - a.fa.from) * k; if (k >= 1) { const r = a.fa.res; a.fa = null; r(); } }
+  }
+}
+function updDialog(dt) {
+  const Ln = dialog.lines[dialog.i];
+  dialog.c = Ln.note ? Ln.text.length : Math.min(Ln.text.length, dialog.c + dt * 40);
+  if (hit(...OKK)) {
+    if (dialog.c < Ln.text.length) dialog.c = Ln.text.length;
+    else { dialog.i++; dialog.c = 0; if (dialog.i >= dialog.lines.length) { const r = dialog.res; dialog = null; r(); } }
+  }
+}
+function updChoice() {
+  if (hit('ArrowUp', 'KeyW')) { choice.i = (choice.i + choice.opts.length - 1) % choice.opts.length; SFX.tick(); }
+  if (hit('ArrowDown', 'KeyS')) { choice.i = (choice.i + 1) % choice.opts.length; SFX.tick(); }
+  if (hit(...OKK)) { const r = choice.res, i = choice.i; choice = null; r(i); }
+  else if (hit('KeyX', 'Escape')) { const r = choice.res, i = choice.opts.length - 1; choice = null; r(i); }
+}
+function updLock() {
+  if (hit('ArrowLeft', 'KeyA')) lock.i = (lock.i + 3) % 4;
+  if (hit('ArrowRight', 'KeyD')) lock.i = (lock.i + 1) % 4;
+  if (hit('ArrowUp', 'KeyW')) { lock.d[lock.i] = (lock.d[lock.i] + 1) % 10; SFX.tick(); }
+  if (hit('ArrowDown', 'KeyS')) { lock.d[lock.i] = (lock.d[lock.i] + 9) % 10; SFX.tick(); }
+  for (let n = 0; n < 10; n++) if (hit('Digit' + n, 'Numpad' + n)) { lock.d[lock.i] = n; lock.i = Math.min(3, lock.i + 1); SFX.tick(); }
+  if (hit(...OKK)) { const r = lock.res, v = lock.d.join(''); lock = null; r(v); }
+  else if (hit('KeyX', 'Escape')) { const r = lock.res; lock = null; r(null); }
+}
+function update(dt) {
+  modeT += dt;
+  if (toastMsg) { toastMsg.t -= dt; if (toastMsg.t <= 0) toastMsg = null; }
+  if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
+  if (lightT > 0) lightT = Math.max(0, lightT - dt);
+  if (mode === 'warn') {
+    if (hit('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS')) { MILD = !MILD; saveMild(); SFX.tick(); }
+    if (modeT > 1 && hit(...OKK)) { mode = 'title'; modeT = 0; }
+    return;
+  }
+  if (mode === 'title') { if (hit(...OKK)) startGame(); return; }
+  if (mode === 'end') { if (modeT > 2.5 && hit(...OKK)) { mode = 'title'; modeT = 0; } return; }
+  if (mode === 'dead') { if (modeT > 1.2 && hit(...OKK)) loadCP(); return; }
+  S.time += dt;
+  updTweens(dt);
+  if (afterT > 0) afterT = Math.max(0, afterT - dt * 1.2);
+  if (scare) { scare.t += dt; if (scare.t >= scare.dur) { const r = scare.res; scare = null; r(); } return; }
+  if (flashFx) { flashFx.t += dt; if (flashFx.t >= flashFx.dur) { const r = flashFx.res; flashFx = null; r(); } return; }
+  if (dialog) { updDialog(dt); return; }
+  if (choice) { updChoice(); return; }
+  if (lock) { updLock(); return; }
+  ambT -= dt;
+  if (ambT <= 0) {
+    ambT = rnd(9, 18);
+    const hasWin = MAPS[S.map].objs.some(o => o.t === 'window');
+    if (hasWin && Math.random() < 0.35) { SFX.thunder(); lightT = 0.3; } else SFX.ambient();
+  }
+  if (M.chase) { heartT -= dt; if (heartT <= 0) { SFX.heart(); heartT = M.active ? clamp(Math.hypot(S.x - M.x, S.y - M.y) / 500, 0.35, 0.9) : 0.8; } }
+  if (scriptDepth > 0) return;
+  if (doorCD > 0) doorCD -= dt;
+  if (S.hidden) {
+    if (hit(...OKK) && M.grab == null) { S.hidden = null; SFX.door(); }
+    updMonster(dt); return;
+  }
+  const dx = (isDown('ArrowRight', 'KeyD') ? 1 : 0) - (isDown('ArrowLeft', 'KeyA') ? 1 : 0);
+  const dy = (isDown('ArrowDown', 'KeyS') ? 1 : 0) - (isDown('ArrowUp', 'KeyW') ? 1 : 0);
+  moving = !!(dx || dy);
+  running = moving && isDown('ShiftLeft', 'ShiftRight');
+  if (moving) {
+    if (dy < 0) S.dir = 'up'; else if (dy > 0) S.dir = 'down';
+    if (!dy) S.dir = dx < 0 ? 'left' : 'right';
+    const sp = (running ? 175 : 115) * (dx && dy ? 0.7071 : 1);
+    moveP(dx * sp * dt, 0); moveP(0, dy * sp * dt);
+    walkT += dt * (running ? 1.45 : 1); stepT -= dt;
+    if (stepT <= 0) {
+      if (running) { SFX.runStep(); stepT = 0.24; PUFFS.push({ x: S.x - dx * 6 + rnd(-3, 3), y: S.y - 1, t: 0 }); }
+      else { SFX.step(); stepT = 0.36; }
+    }
+    checkZones();
+  }
+  if (hit(...OKK) && !busy()) { const o = findObj(); if (o) run(() => interact(o)); }
+  if (!busy()) updMonster(dt);
+}
+
+// =========================================================
+// 그리기: 바닥 (방에 들어갈 때 한 번만 그려 둠)
+// =========================================================
+const isFloor = c => c !== undefined && c !== '#' && c !== 'D';
+function floorWood(px, py, x, y, base, dark, gap) {
+  for (let i = 0; i < 4; i++) {
+    const r = y * 4 + i, wy = py + i * 8, Lp = 64 + ((hash(r, 3) * 3) | 0) * 24, off = (hash(r, 7) * Lp) | 0;
+    for (let s = Math.floor((px - off) / Lp); s <= Math.floor((px + T - 1 - off) / Lp); s++) {
+      const sx = off + s * Lp, a = Math.max(sx, px), b = Math.min(sx + Lp, px + T);
+      const c = sh(base, (hash(r * 31, s + 99) - 0.5) * 0.3);
+      ctx.fillStyle = vg(wy, 8, sh(c, 0.06), sh(c, -0.12)); ctx.fillRect(a, wy, b - a, 8);
+      if (sx >= px && sx < px + T) { R(sx, wy, gap ? 1.2 : 0.8, 8, dark); C(sx + 2.2, wy + 2, 0.45, '#0a0604'); C(sx + 2.2, wy + 6, 0.45, '#0a0604'); }
+    }
+    ctx.lineWidth = 0.35;
+    for (let k = 0; k < 3; k++) {
+      ctx.strokeStyle = `rgba(0,0,0,${0.12 + hash(r, k) * 0.12})`; ctx.beginPath();
+      const gy = wy + 1.6 + k * 2.3, ph = hash(r, k + 5) * 100;
+      for (let gx = px; gx <= px + T; gx += 2) { const yy = gy + Math.sin((gx + ph) / (8 + k * 3)) * 0.55; gx === px ? ctx.moveTo(gx, yy) : ctx.lineTo(gx, yy); }
+      ctx.stroke();
+    }
+    R(px, wy + 7.2, T, gap ? 1.2 : 0.8, dark); R(px, wy, T, 0.4, 'rgba(255,230,200,0.06)');
+    if (hash(x * 7 + i, y * 3) > 0.94) { E(px + 4 + hash(x, i) * 24, wy + 4, 2.4, 1.4, sh(base, -0.4)); E(px + 4 + hash(x, i) * 24, wy + 4, 1.1, 0.6, sh(base, -0.6)); }
+  }
+}
+function floorCarpet(px, py, x, y, m) {
+  const nb = (dx, dy) => (m.grid[y + dy] || '')[x + dx] === 'c';
+  ctx.fillStyle = rg(px + 16, py + 16, 24, '#5a1420', '#400c16'); ctx.fillRect(px, py, T, T);
+  for (let i = 0; i < T; i += 1.5) R(px, py + i, T, 0.5, 'rgba(0,0,0,0.12)');
+  for (let i = 0; i < T; i += 1.5) R(px + i, py, 0.4, T, 'rgba(255,200,180,0.025)');
+  const cx = px + 16, cy = py + 16; ctx.strokeStyle = 'rgba(210,160,80,0.28)'; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(cx, cy - 10); ctx.lineTo(cx + 10, cy); ctx.lineTo(cx, cy + 10); ctx.lineTo(cx - 10, cy); ctx.closePath(); ctx.stroke();
+  for (const [dx, dy] of [[0, -6], [6, 0], [0, 6], [-6, 0]]) E(cx + dx, cy + dy, 1.6, 1.6, 'rgba(210,150,80,0.3)');
+  C(cx, cy, 2.2, 'rgba(30,60,50,0.6)'); C(cx, cy, 1, 'rgba(220,170,90,0.5)');
+  const g = GOLD;
+  if (!nb(0, -1)) { R(px, py, T, 4.5, '#24060a'); R(px, py + 4.5, T, 1, g); R(px, py + 6.5, T, 0.5, g); for (let i = 2; i < T; i += 6) C(px + i, py + 2.2, 0.8, 'rgba(210,160,80,.5)'); }
+  if (!nb(0, 1)) { R(px, py + T - 4.5, T, 4.5, '#24060a'); R(px, py + T - 5.5, T, 1, g); R(px, py + T - 7, T, 0.5, g); for (let i = 2; i < T; i += 6) C(px + i, py + T - 2.2, 0.8, 'rgba(210,160,80,.5)'); }
+  if (!nb(-1, 0)) { R(px, py, 4.5, T, '#24060a'); R(px + 4.5, py, 1, T, g); R(px + 6.5, py, 0.5, T, g); }
+  if (!nb(1, 0)) { R(px + T - 4.5, py, 4.5, T, '#24060a'); R(px + T - 5.5, py, 1, T, g); R(px + T - 7, py, 0.5, T, g); }
+  if (hash(x, y * 5) > 0.7) { ctx.fillStyle = rg(px + hash(x, 2) * T, py + hash(y, 3) * T, 14, 'rgba(255,210,190,0.06)', 'rgba(255,210,190,0)'); ctx.fillRect(px, py, T, T); }
+}
+function floorMarble(px, py, x, y) {
+  const light = (x + y) % 2 === 0, base = light ? '#55555e' : '#24242a';
+  const g = ctx.createLinearGradient(px, py, px + T, py + T); g.addColorStop(0, sh(base, 0.1)); g.addColorStop(1, sh(base, -0.12)); ctx.fillStyle = g; ctx.fillRect(px, py, T, T);
+  ctx.lineWidth = 0.5;
+  for (let k = 0; k < 2; k++) {
+    ctx.strokeStyle = light ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.07)'; ctx.beginPath();
+    const a = hash(x + k, y), b = hash(y + k, x);
+    ctx.moveTo(px + a * T, py); ctx.bezierCurveTo(px + b * T, py + 10, px + a * T * 0.5, py + 22, px + b * T, py + T); ctx.stroke();
+  }
+  R(px, py, T, 0.6, '#141418'); R(px, py, 0.6, T, '#141418'); R(px + 1, py + 1, T - 2, 0.6, 'rgba(255,255,255,0.08)');
+}
+function drawFloor(x, y, ch, m) {
+  const px = x * T, py = y * T;
+  if (ch === 'c') floorCarpet(px, py, x, y, m);
+  else if (ch === 'g') floorMarble(px, py, x, y);
+  else if (ch === 'p') floorWood(px, py, x, y, '#5a3e3e', '#241414');
+  else if (ch === 'a') { floorWood(px, py, x, y, '#3a2818', '#0a0604', true); for (let i = 0; i < 6; i++) C(px + hash(x * 9 + i, y) * T, py + hash(y * 9 + i, x) * T, 0.5, 'rgba(200,190,170,0.12)'); }
+  else floorWood(px, py, x, y, '#5a3c24', '#1e140c');
+  const g = m.grid, up = (g[y - 1] || '')[x], lf = (g[y] || '')[x - 1], rt = (g[y] || '')[x + 1];
+  if (up === '#' || up === 'D') { ctx.fillStyle = vg(py, 14, 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0)'); ctx.fillRect(px, py, T, 14); }
+  if (lf === '#') { ctx.fillStyle = hg(px, 8, 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0)'); ctx.fillRect(px, py, 8, T); }
+  if (rt === '#') { ctx.fillStyle = hg(px + T - 8, 8, 'rgba(0,0,0,0)', 'rgba(0,0,0,0.45)'); ctx.fillRect(px + T - 8, py, 8, T); }
+}
+function foot(x, y, a, c) { E(x, y, 1.6, 2.6, c, a); E(x + Math.sin(a) * 3, y - Math.cos(a) * 3, 1.3, 1.5, c, a); }
+function decals(m) {
+  for (let i = 0; i < 12; i++) {
+    const x = 1 + hash(i, m.id.length * 7 + 3) * 18, y = 2.5 + hash(m.id.length * 3 + 1, i) * 11;
+    if (!isFloor((m.grid[y | 0] || '')[x | 0])) continue;
+    const r = 6 + hash(i, 9) * 14; ctx.fillStyle = rg(x * T, y * T, r, 'rgba(10,6,2,0.28)', 'rgba(10,6,2,0)'); ctx.fillRect(x * T - r, y * T - r, r * 2, r * 2);
+  }
+  const id = m.id;
+  if (id === 'hall') {
+    for (let i = 0; i < 18; i++) { const yy = 13.4 * T - i * 18, xx = 9.5 * T + (i % 2 ? 5 : -5); foot(xx - 8, yy, 0, 'rgba(40,28,18,0.35)'); foot(xx + 12, yy - 9, 0, 'rgba(40,28,18,0.3)'); }
+    R(9 * T + 4, 13 * T + 8, 56, 20, '#3a2a1a'); for (let i = 0; i < 56; i += 2) R(9 * T + 4 + i, 13 * T + 8, 1, 20, 'rgba(0,0,0,.25)');
+    for (let i = 0; i < 9; i++) E(8.5 * T + hash(i, 1) * 90, 12.6 * T + hash(1, i) * 40, 2.5, 1.5, ['#6a3a10', '#8a5a1a', '#4a2a0a'][i % 3], hash(i, 4) * 3);
+  } else if (id === 'dining') {
+    ctx.strokeStyle = 'rgba(10,6,4,0.55)'; ctx.lineWidth = 0.8;
+    for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.moveTo(T + 3, 6.4 * T + k * 5); ctx.lineTo(T + 22, 6.9 * T + k * 5); ctx.stroke(); }
+    for (let i = 0; i < 14; i++) E(2 * T + hash(i, 5) * 15 * T, 9 * T + hash(5, i) * 4 * T, 1.8, 1, ['#c03a5a', '#3a8ac0', '#d8b030', '#5ab05a'][i % 4], hash(i, 2) * 3);
+  } else if (id === 'corridor') {
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const pts = [[9.5, 13.3], [6, 12.6], [2.4, 12], [2.2, 8], [2.6, 4.2], [6, 3], [10.2, 2.6]];
+    for (const [w, c] of [[7, 'rgba(50,10,10,0.25)'], [3, 'rgba(70,14,12,0.3)']]) { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x * T, y * T) : ctx.moveTo(x * T, y * T)); ctx.stroke(); }
+    ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
+  } else if (id === 'gallery') {
+    for (let i = 0; i < 6; i++) E(9 * T + hash(i, 3) * 40 - 4, 8 * T + hash(3, i) * 20, 1.8, 1.1, '#9a0c1a', hash(i, 1) * 3);
+    for (let i = 0; i < 5; i++) { const hx2 = 5 * T + i * 14, hy = 9.3 * T; C(hx2, hy, 2, 'rgba(0,0,0,.18)'); for (let f = 0; f < 4; f++) C(hx2 - 2.5 + f * 1.7, hy - 3, 0.7, 'rgba(0,0,0,.18)'); }
+  } else if (id === 'child') {
+    for (let i = 0; i < 6; i++) { const cx = 4 * T + hash(i, 8) * 10 * T, cy = 10 * T + hash(8, i) * 3 * T; ctx.save(); ctx.translate(cx, cy); ctx.rotate(hash(i, 7) * 3); R(-4, -0.9, 8, 1.8, ['#e04a6a', '#4a8ae0', '#e0c04a', '#6ac06a', '#9a5ae0', '#e08a3a'][i]); ctx.restore(); }
+  } else if (id === 'attic') {
+    for (let i = 0; i < 14; i++) foot(6 * T + hash(i, 2) * 8 * T, 5.5 * T + hash(2, i) * 3 * T, hash(i, 6) * 6, 'rgba(0,0,0,0.22)');
+  }
+}
+
+// =========================================================
+// 그리기: 벽 (위아래 두 칸 높이의 벽면)
+// =========================================================
+function wallpaper(px, top, bottom, m) {
+  const h = bottom - top;
+  ctx.fillStyle = vg(top, h, sh(m.wall, -0.45), sh(m.wall, 0.05)); ctx.fillRect(px, top, T, h);
+  if (m.wp === 'damask') {
+    for (let yy = top + 7; yy < bottom; yy += 13) for (let k = 0; k < 2; k++) {
+      const cx = px + 8 + k * 16 + (((yy - top) / 13 | 0) % 2 ? 8 : 0), cy = yy; if (cx > px + T + 4) continue;
+      ctx.fillStyle = 'rgba(255,215,170,0.09)'; ctx.beginPath(); ctx.moveTo(cx, cy - 5);
+      ctx.bezierCurveTo(cx + 3.5, cy - 3, cx + 3, cy + 1.5, cx, cy + 5); ctx.bezierCurveTo(cx - 3, cy + 1.5, cx - 3.5, cy - 3, cx, cy - 5); ctx.fill();
+      C(cx - 3.6, cy + 0.6, 1.1, 'rgba(255,215,170,0.08)'); C(cx + 3.6, cy + 0.6, 1.1, 'rgba(255,215,170,0.08)');
+    }
+  } else if (m.wp === 'stripe') {
+    for (let i = 0; i < 4; i++) { R(px + i * 8, top, 4, h, 'rgba(0,0,0,0.14)'); R(px + i * 8 + 4, top, 0.5, h, 'rgba(220,180,110,0.12)'); }
+  } else if (m.wp === 'star') {
+    for (let k = 0; k < 3; k++) { const sx = px + hash(px, k) * 28 + 2, sy = top + 4 + hash(k, px) * (h - 10); ctx.fillStyle = 'rgba(255,240,200,0.2)'; ctx.beginPath(); for (let j = 0; j < 10; j++) { const a = j * Math.PI / 5 - Math.PI / 2, r = j % 2 ? 0.9 : 2.2; ctx.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r); } ctx.fill(); }
+    if (hash(px, 3) > 0.6) { C(px + 16, top + 10, 2.6, 'rgba(255,240,200,0.18)'); C(px + 17.2, top + 9.2, 2.3, sh(m.wall, -0.2)); }
+  } else if (m.wp === 'plain') {
+    for (let i = 0; i < 5; i++) R(px + hash(px, i) * T, top + hash(i, px) * h, 3, 0.4, 'rgba(255,255,255,0.03)');
+  }
+  if (m.wp !== 'plank') {
+    if (hash(px, 77) > 0.62) { const sx = px + hash(px, 78) * 22 + 3, sw = 4 + hash(px, 79) * 5; ctx.fillStyle = vg(top, h * 0.8, 'rgba(25,15,5,0.4)', 'rgba(25,15,5,0)'); ctx.fillRect(sx, top, sw, h * 0.8); }
+    if (hash(px, 88) > 0.8) {
+      const sx = px + 6 + hash(px, 89) * 14, sy = top + 6 + hash(px, 90) * (h - 20);
+      P([sx, sy, sx + 9, sy + 1, sx + 8, sy + 7, sx + 3, sy + 9], sh(m.wall, 0.25)); P([sx + 3, sy + 9, sx + 8, sy + 7, sx + 6, sy + 11], 'rgba(0,0,0,0.35)');
+    }
+  }
+}
+function faceColumn(px, top, h, m) {
+  const bottom = top + h;
+  ctx.save(); ctx.beginPath(); ctx.rect(px, top, T, h); ctx.clip();
+  if (m.wp === 'plank') {
+    ctx.fillStyle = vg(top, h, sh(m.wall, -0.5), sh(m.wall, 0.05)); ctx.fillRect(px, top, T, h);
+    for (let i = 0; i < 4; i++) { const bx = px + i * 8, c = sh(m.wall, (hash(px + i, 5) - 0.5) * 0.3); ctx.fillStyle = vg(top, h, sh(c, -0.45), sh(c, 0.05)); ctx.fillRect(bx, top, 7.4, h); R(bx + 7.4, top, 0.6, h, '#0a0604'); grain(bx, top, 7, h, 0.08); }
+    if (hash(px, 2) > 0.7) E(px + 12, top + h * 0.5, 1.6, 2.6, '#1a1008');
+    R(px, bottom - 3, T, 3, '#120a06');
+  } else {
+    const railY = bottom - 20, baseY = bottom - 4;
+    wallpaper(px, top, railY, m);
+    if (h > 32) { R(px, top, T, 3.5, sh(WOOD, -0.35)); R(px, top + 3.5, T, 1.5, sh(WOOD, 0.15)); R(px, top + 5, T, 1.2, 'rgba(0,0,0,0.45)'); }
+    ctx.fillStyle = vg(railY + 2.5, baseY - railY - 2.5, sh(WOOD, -0.2), sh(WOOD, -0.45)); ctx.fillRect(px, railY + 2.5, T, baseY - railY - 2.5);
+    const pt = railY + 5, pb = baseY - 2.5;
+    R(px + 3, pt, T - 6, pb - pt, sh(WOOD, -0.38)); R(px + 3, pt, T - 6, 0.7, 'rgba(0,0,0,0.5)'); R(px + 3, pb - 0.7, T - 6, 0.7, sh(WOOD, 0.05)); R(px + T - 3.7, pt, 0.7, pb - pt, sh(WOOD, 0.0)); R(px + 3, pt, 0.7, pb - pt, 'rgba(0,0,0,0.5)');
+    grain(px, railY + 2.5, T, baseY - railY - 2.5, 0.07);
+    R(px, railY, T, 2.8, sh(WOOD, 0.05)); R(px, railY, T, 0.7, sh(WOOD, 0.4)); R(px, railY + 2.8, T, 0.9, 'rgba(0,0,0,0.55)');
+    R(px, baseY, T, 4, '#140c08'); R(px, baseY, T, 0.7, '#4a3220');
+  }
+  ctx.restore();
+}
+function drawWallTop(x, y, m) {
+  const px = x * T, py = y * T;
+  R(px, py, T, T, '#0c080b');
+  for (let i = 0; i < 5; i++) R(px + hash(x * 5 + i, y) * T, py + hash(y * 5 + i, x) * T, 1.2, 1.2, 'rgba(255,255,255,0.025)');
+  const g = m.grid, open = (dx, dy) => isFloor((g[y + dy] || '')[x + dx]) || (g[y + dy] || '')[x + dx] === 'D';
+  if (open(1, 0)) { R(px + T - 3, py, 3, T, '#2c2026'); R(px + T - 3, py, 0.7, T, '#3e2e36'); }
+  if (open(-1, 0)) { R(px, py, 3, T, '#2c2026'); R(px + 2.3, py, 0.7, T, '#3e2e36'); }
+  if (open(0, -1)) { R(px, py, T, 3, '#2c2026'); R(px, py + 2.3, T, 0.7, '#3e2e36'); }
+}
+function drawDoorBG(x, y, m, d) {
+  const px = x * T, py = y * T;
+  const st = d.style || ((x === 0 || x === COLS - 1) ? 'side' : 'north');
+  if (st === 'side') {
+    drawFloor(x, y, m.floor, m); const left = x === 0;
+    ctx.fillStyle = hg(px, T, left ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0)', left ? 'rgba(0,0,0,0)' : 'rgba(0,0,0,0.85)'); ctx.fillRect(px, py, T, T);
+    box(px, py - 4, T, 5, DWOOD); box(px, py + T - 1, T, 5, DWOOD);
+    box(left ? px + 22 : px + 4, py - 6, 6, T + 12, WOOD);
+  } else if (st === 'north') {
+    const top = py - 18;
+    R(px + 2, top, T - 4, py + T - top, '#120a06'); box(px + 2, top, T - 4, 3, sh(WOOD, 0.1));
+    box(px + 2, top, 3, py + T - top, WOOD); box(px + T - 5, top, 3, py + T - top, WOOD);
+    box(px + 5, top + 3, T - 10, py + T - top - 3, '#5c3a1e'); grain(px + 5, top + 3, T - 10, py + T - top - 3, 0.1);
+    R(px + 8, top + 6, T - 16, 17, 'rgba(0,0,0,0.25)'); R(px + 8, top + 26, T - 16, 17, 'rgba(0,0,0,0.25)');
+    R(px + 8, top + 22.4, T - 16, 0.6, 'rgba(255,220,180,0.12)'); R(px + 8, top + 42.4, T - 16, 0.6, 'rgba(255,220,180,0.12)');
+    C(px + T - 9, py + 8, 1.8, '#c9a24a'); C(px + T - 9.5, py + 7.5, 0.7, '#fff0c0');
+  } else if (st === 'front') {
+    const lft = d.side === 'L';
+    box(px, py, T, T - 2, '#4a2c16'); grain(px, py, T, T - 2, 0.1);
+    R(px + (lft ? 3 : 2), py + 3, T - 5, 11, 'rgba(0,0,0,0.25)'); R(px + (lft ? 3 : 2), py + 16, T - 5, 11, 'rgba(0,0,0,0.25)');
+    for (let i = 0; i < 4; i++) C(px + 5 + i * 7, py + 2, 0.8, '#2a2a2a');
+    C(lft ? px + T - 4 : px + 4, py + 15, 2, '#c9a24a'); R(lft ? px + T - 1 : px, py, 1, T, '#000');
+  } else if (st === 'stairsUp') {
+    const top = py - 18;
+    R(px + 1, top, T - 2, py + T - top, '#050304');
+    for (let i = 0; i < 8; i++) { const sy = py + T - (i + 1) * 6.2, c = sh('#5a3c24', -0.75 + (7 - i) * 0.09); R(px + 3 + i * 0.4, sy, T - 6 - i * 0.8, 6.2, c); R(px + 3 + i * 0.4, sy, T - 6 - i * 0.8, 0.8, sh(c, 0.3)); }
+    box(px, top, 3, py + T - top, WOOD); box(px + T - 3, top, 3, py + T - top, WOOD);
+    for (let i = 0; i < 5; i++) { R(px + 4, py + T - 6 - i * 9, 1, 7, '#3a2414'); R(px + T - 5, py + T - 6 - i * 9, 1, 7, '#3a2414'); }
+  } else if (st === 'stairsDown') {
+    R(px, py, T, T, '#040203');
+    for (let i = 0; i < 6; i++) { const c = sh('#5a3c24', -0.2 - i * 0.13); R(px + 3, py + i * 5.3, T - 6, 5.3, c); R(px + 3, py + i * 5.3, T - 6, 0.7, sh(c, 0.3)); }
+    box(px, py, 3, T, WOOD); box(px + T - 3, py, 3, T, WOOD);
+  } else if (st === 'hatch') {
+    R(px + 4, py - 27, T - 8, 14, '#060404'); box(px + 6, py - 25, T - 12, 10, '#4a2e18');
+    L(px + 16, py - 15, px + 16, py + 6, '#b0a890', 0.7); C(px + 16, py + 8, 2.6, 'rgba(0,0,0,0)'); ctx.strokeStyle = '#a89a70'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px + 16, py + 8.5, 2.4, 0, 7); ctx.stroke();
+  } else if (st === 'ladderDown') {
+    R(px, py, T, T, '#020102'); ctx.fillStyle = vg(py, T, 'rgba(60,40,20,0.4)', 'rgba(0,0,0,0)'); ctx.fillRect(px, py, T, T);
+    box(px + 7, py, 3, T, '#6a4a2a'); box(px + 22, py, 3, T, '#6a4a2a'); for (let i = 0; i < 4; i++) box(px + 7, py + 4 + i * 8, 18, 2, '#5a3a1e');
+  }
+}
+function renderBG(id) {
+  const m = MAPS[id], c = document.createElement('canvas'); c.width = W * SC; c.height = H * SC;
+  ctx = c.getContext('2d'); ctx.scale(SC, SC);
+  const g = m.grid, at = (x, y) => (g[y] || '')[x];
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const ch = g[y][x];
+    if (ch === '#') drawWallTop(x, y, m);
+    else if (ch === 'D') { const d = m.doors[x + ',' + y]; if (d && d.style !== 'front' && (x === 0 || x === COLS - 1)) drawDoorBG(x, y, m, d); else drawWallTop(x, y, m); }
+    else drawFloor(x, y, ch, m);
+  }
+  decals(m);
+  // 북쪽 벽면: 아래가 바닥이면 벽면, 그 위 칸도 벽이면 두 칸 높이로
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const ch = g[y][x];
+    if ((ch === '#' || (ch === 'D' && y === 1)) && isFloor(at(x, y + 1))) {
+      const tall = at(x, y - 1) === '#';
+      faceColumn(x * T, tall ? (y - 1) * T : y * T, tall ? 2 * T : T, m);
+    }
+  }
+  for (const k in m.doors) { const [x, y] = k.split(',').map(Number), d = m.doors[k]; if (!(x === 0 || x === COLS - 1) || d.style === 'front') drawDoorBG(x, y, m, d); }
+  ctx = MAIN; return c;
+}
+
+// =========================================================
+// 그리기: 가구와 물건
+// =========================================================
+const BOOK = ['#6a1e1e', '#1e4a2e', '#2a2a5a', '#5a4a1e', '#4a1e4a', '#7a6a3a', '#1e3a4a', '#3a2a1a'];
+function flame(x, y, s) {
+  const f = Math.sin(now * 14 + x) * 1.1, f2 = Math.sin(now * 23 + x * 2) * 0.5;
+  ctx.fillStyle = rg(x, y, 9 * s, 'rgba(255,170,60,0.35)', 'rgba(255,170,60,0)'); ctx.fillRect(x - 9 * s, y - 9 * s, 18 * s, 18 * s);
+  ctx.fillStyle = '#ff8a1a'; ctx.beginPath(); ctx.moveTo(x + f2, y - 6.5 * s - f); ctx.quadraticCurveTo(x + 3 * s, y - 1, x, y + 2 * s); ctx.quadraticCurveTo(x - 3 * s, y - 1, x + f2, y - 6.5 * s - f); ctx.fill();
+  ctx.fillStyle = '#fff4c0'; ctx.beginPath(); ctx.moveTo(x + f2 * 0.5, y - 3.5 * s - f * 0.5); ctx.quadraticCurveTo(x + 1.5 * s, y, x, y + 1.6 * s); ctx.quadraticCurveTo(x - 1.5 * s, y, x + f2 * 0.5, y - 3.5 * s - f * 0.5); ctx.fill();
+  E(x, y + 1.4 * s, 0.9 * s, 1.2 * s, 'rgba(80,120,255,0.5)');
+}
+function candleStick(cx, cy, s, litOn) {
+  ctx.fillStyle = vg(cy - 9 * s, 9 * s, '#f2ead8', '#c8bea4'); ctx.fillRect(cx - 2.2 * s, cy - 9 * s, 4.4 * s, 9 * s);
+  E(cx - 1.4 * s, cy - 6 * s, 0.9 * s, 2 * s, '#e8e0cc'); R(cx - 0.2, cy - 10.5 * s, 0.6, 1.6 * s, '#222');
+  if (litOn) flame(cx, cy - 12 * s, s);
+}
+function pumpkinBody(cx, cy, rx, ry, glow) {
+  for (const l of [-0.7, 0.7, -0.38, 0.38, 0]) {
+    const gx = cx + l * rx * 0.62;
+    ctx.fillStyle = rg(gx, cy, rx * 0.9, '#f8a040', '#7a3004', gx - rx * 0.12, cy - ry * 0.45);
+    ctx.beginPath(); ctx.ellipse(gx, cy, rx * (0.48 - Math.abs(l) * 0.1), ry, 0, 0, 7); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(80,25,0,0.5)'; ctx.lineWidth = rx * 0.04;
+  for (const l of [-0.5, -0.18, 0.18, 0.5]) { ctx.beginPath(); ctx.ellipse(cx + l * rx * 0.62, cy, rx * 0.05, ry * 0.95, 0, 0, 7); ctx.stroke(); }
+  E(cx - rx * 0.3, cy - ry * 0.5, rx * 0.16, ry * 0.12, 'rgba(255,230,180,0.35)');
+  if (glow != null) {
+    const fl = 0.72 + 0.28 * Math.sin(now * 12 + cx), lit = glow;
+    const gcol = lit ? rg(cx, cy, rx * 0.8, `rgba(255,${(245 * fl) | 0},150,1)`, `rgba(255,${(120 * fl) | 0},20,1)`) : '#2a1206';
+    const rim = lit ? '#e8a050' : '#5a2a0a';
+    const eye = (s) => { const ex = cx + s * rx * 0.38, ey = cy - ry * 0.15; return [ex - rx * 0.24, ey + ry * 0.12, ex + rx * 0.22, ey + ry * 0.14, ex + s * rx * 0.04, ey - ry * 0.38]; };
+    const mouth = [cx - rx * 0.62, cy + ry * 0.2, cx - rx * 0.4, cy + ry * 0.32, cx - rx * 0.3, cy + ry * 0.2, cx - rx * 0.12, cy + ry * 0.36, cx, cy + ry * 0.24, cx + rx * 0.12, cy + ry * 0.36, cx + rx * 0.3, cy + ry * 0.2, cx + rx * 0.4, cy + ry * 0.32, cx + rx * 0.62, cy + ry * 0.2, cx + rx * 0.42, cy + ry * 0.62, cx + rx * 0.2, cy + ry * 0.5, cx, cy + ry * 0.66, cx - rx * 0.2, cy + ry * 0.5, cx - rx * 0.42, cy + ry * 0.62];
+    for (const pts of [eye(-1), eye(1), mouth]) { P(pts.map((v, i) => i % 2 ? v + ry * 0.05 : v), rim); P(pts, gcol); }
+  }
+}
+function stem(cx, cy, s) { ctx.strokeStyle = '#4a5a22'; ctx.lineWidth = 2.6 * s; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + 1 * s, cy - 4 * s, cx + 3.5 * s, cy - 5 * s); ctx.stroke(); ctx.lineCap = 'butt'; }
+const DRAW = {
+  longtable(x, y, w, h) {
+    softShadow(x + w / 2, y + h - 2, w / 2 + 4, 10, 0.55);
+    for (const lx of [x + 6, x + w - 10]) box(lx, y + h - 12, 4, 12, DWOOD);
+    box(x + 2, y + 1, w - 4, h - 9, WOOD); grain(x + 2, y + 1, w - 4, h - 9, 0.1);
+    ctx.fillStyle = vg(y + 3, h - 12, '#d8d0bc', '#a89e86'); ctx.fillRect(x + 5, y + 3, w - 10, h - 14);
+    ctx.fillStyle = '#a89e86'; ctx.beginPath(); ctx.moveTo(x + 5, y + h - 11);
+    for (let i = 0; i <= (w - 10) / 8; i++) { const sx = x + 5 + i * 8; ctx.quadraticCurveTo(sx - 4, y + h - 5, sx, y + h - 10); }
+    ctx.lineTo(x + w - 5, y + h - 11); ctx.fill();
+    for (let i = 0; i < (w - 10) / 8; i++) R(x + 8 + i * 8, y + h - 11, 0.6, 4, 'rgba(0,0,0,0.15)');
+    for (let i = 0; i < 6; i++) { const sx = x + 10 + hash(i, 4) * (w - 30), sy = y + 6 + hash(4, i) * (h - 24); ctx.fillStyle = rg(sx, sy, 6, 'rgba(90,40,20,0.35)', 'rgba(90,40,20,0)'); ctx.fillRect(sx - 6, sy - 6, 12, 12); }
+    for (let i = 0; i < w / T; i++) {
+      const pxp = x + 16 + i * T;
+      for (const yy of [y + 13, y + 36]) {
+        softShadow(pxp + 1, yy + 2, 9, 4, 0.35); E(pxp, yy, 8.5, 6, '#e8e4da'); E(pxp, yy, 6, 4, '#c8c2b4'); E(pxp, yy, 8.5, 6, 'rgba(0,0,0,0)');
+        const k = hash(i, yy); E(pxp - 1, yy, 3.6, 2.4, k > 0.66 ? '#3a4a1a' : k > 0.33 ? '#4a2a1a' : '#2a2018'); E(pxp + 1.5, yy - 0.5, 1.6, 1.1, k > 0.5 ? '#6a7a2a' : '#5a3a20');
+        if (hash(yy, i) > 0.6) { R(pxp + 8, yy - 4, 1, 8, '#a8a8b0'); }
+      }
+      if (i % 3 === 1) { E(pxp + 12, y + 24, 2.4, 1.8, '#9aa0a8'); R(pxp + 11.5, y + 24, 1, 4, '#9aa0a8'); }
+    }
+  },
+  chair(x, y, w, h, o) {
+    softShadow(x + 16, y + 26, 11, 5, 0.45);
+    box(x + 7, y + 22, 2.5, 7, DWOOD); box(x + 22.5, y + 22, 2.5, 7, DWOOD);
+    box(x + 6, y + 10, 20, 14, WOOD);
+    ctx.fillStyle = rg(x + 16, y + 16, 10, '#8a2430', '#4a0e16', x + 13, y + 13); rrect(x + 8, y + 11.5, 16, 10.5, 3); ctx.fill();
+    if (o.dir === 'down') { box(x + 6, y - 8, 3, 20, DWOOD); box(x + 23, y - 8, 3, 20, DWOOD); box(x + 6, y - 9, 20, 5, WOOD); ctx.fillStyle = '#6a1a24'; rrect(x + 10, y - 4, 12, 12, 2); ctx.fill(); }
+    else { box(x + 6, y + 22, 20, 6, WOOD); }
+  },
+  cabinet(x, y, w, h) {
+    const top = y - T * 1.45, hh = y + h - top - 4;
+    softShadow(x + w / 2, y + h - 3, w / 2 + 2, 6, 0.55);
+    box(x + 1, top, w - 2, hh, '#4a2c16'); box(x - 1, top - 2, w + 2, 5, '#5a3820');
+    const gw = (w - 12) / 2, gh = hh * 0.52;
+    for (let i = 0; i < 2; i++) {
+      const gx = x + 5 + i * (gw + 2), gy = top + 6;
+      R(gx, gy, gw, gh, '#0e141a');
+      for (let k = 0; k < 3; k++) { const sy = gy + 7 + k * (gh / 3); R(gx, sy + 4, gw, 1, '#3a2414'); for (let p = 0; p < 2; p++) { E(gx + 6 + p * (gw - 12), sy, 4.5, 4.5, '#b8bcc4'); E(gx + 6 + p * (gw - 12), sy, 2.6, 2.6, '#8a909a'); } }
+      ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); ctx.moveTo(gx + 2, gy + gh); ctx.lineTo(gx + gw * 0.6, gy); ctx.lineTo(gx + gw * 0.8, gy); ctx.lineTo(gx + 6, gy + gh); ctx.fill();
+      ctx.strokeStyle = '#6a4a2a'; ctx.lineWidth = 1; ctx.strokeRect(gx, gy, gw, gh);
+    }
+    const dy = top + 9 + gh; box(x + 4, dy, w - 8, hh - gh - 12, '#3e2412');
+    R(x + w / 2 - 0.5, dy, 1, hh - gh - 12, '#1a0e06');
+    for (const hx2 of [x + w / 2 - 6, x + w / 2 + 6]) { C(hx2, dy + 8, 1.6, '#c9a24a'); C(hx2 - 0.4, dy + 7.6, 0.6, '#fff0c0'); }
+  },
+  closet(x, y, w, h, o) {
+    const top = y - T * 1.45, hh = y + h - top - 3, c = o.tint || '#3a2414';
+    softShadow(x + w / 2, y + h - 2, w / 2 + 2, 6, 0.55);
+    box(x + 2, top, w - 4, hh, c); box(x, top - 3, w, 6, sh(c, 0.15)); R(x + 2, top + 3, w - 4, 1.5, 'rgba(0,0,0,0.4)');
+    const dw = w / 2 - 6;
+    for (const dx of [x + 4, x + w / 2 + 2]) {
+      box(dx, top + 7, dw, hh - 14, sh(c, 0.06)); grain(dx, top + 7, dw, hh - 14, 0.08);
+      R(dx + 3, top + 11, dw - 6, (hh - 26) / 2, 'rgba(0,0,0,0.22)'); R(dx + 3, top + 15 + (hh - 26) / 2, dw - 6, (hh - 26) / 2, 'rgba(0,0,0,0.22)');
+    }
+    R(x + w / 2 - 1, top + 6, 2, hh - 10, '#0a0402');
+    for (const hx2 of [x + w / 2 - 4, x + w / 2 + 4]) { C(hx2, top + hh * 0.52, 1.8, '#c9a24a'); C(hx2 - 0.5, top + hh * 0.52 - 0.5, 0.6, '#fff0c0'); }
+    if (S && S.hidden && S.hidden.t === 'closet' && S.hidden.x === Math.round(x / T) && S.map) { R(x + w / 2 - 1, top + hh * 0.3, 2, 6, 'rgba(255,240,220,0.4)'); }
+  },
+  clock(x, y, w) {
+    const top = y - T * 1.45, cx = x + w / 2, hh = y + T - top - 3;
+    softShadow(cx, y + T - 2, 12, 5, 0.55);
+    box(x + 5, top + 8, w - 10, hh - 8, '#3e2412'); grain(x + 5, top + 8, w - 10, hh - 8, 0.1);
+    ctx.fillStyle = '#4e2e16'; ctx.beginPath(); ctx.moveTo(x + 3, top + 10); ctx.quadraticCurveTo(cx, top - 4, x + w - 3, top + 10); ctx.lineTo(x + w - 3, top + 12); ctx.lineTo(x + 3, top + 12); ctx.fill();
+    C(cx, top + 18, 8.5, '#2a1a0a'); ctx.fillStyle = rg(cx, top + 18, 8, '#efe6c8', '#b8ac88', cx - 2, top + 15); ctx.beginPath(); ctx.arc(cx, top + 18, 7.4, 0, 7); ctx.fill();
+    for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; C(cx + Math.cos(a) * 5.8, top + 18 + Math.sin(a) * 5.8, 0.45, '#2a2a2a'); }
+    L(cx, top + 18, cx - 0.6, top + 13.6, '#111', 1); L(cx, top + 18, cx + 0.3, top + 12.4, '#111', 0.6);
+    R(x + 9, top + 30, w - 18, 24, '#0e0804'); ctx.strokeStyle = '#8a6a2a'; ctx.lineWidth = 0.8; ctx.strokeRect(x + 9, top + 30, w - 18, 24);
+    const a = Math.sin(now * 2) * 0.32, bx = cx + Math.sin(a) * 15, by = top + 31 + Math.cos(a) * 17;
+    L(cx, top + 31, bx, by, '#c9a24a', 1); C(bx, by, 3.2, '#c9a24a'); C(bx - 1, by - 1, 1, '#fff0c0');
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x + 10, top + 31, 3, 22);
+  },
+  bookshelf(x, y, w, h) {
+    const top = y - T * 1.4, hh = y + h - top - 3;
+    softShadow(x + w / 2, y + h - 2, w / 2 + 2, 5, 0.5);
+    box(x, top, w, hh, '#3a2412'); R(x + 3, top + 3, w - 6, hh - 6, '#120a04');
+    const n = 4, shH = (hh - 6) / n;
+    for (let s = 0; s < n; s++) {
+      const sy = top + 3 + s * shH; let bx = x + 4, i = 0;
+      while (bx < x + w - 6) {
+        const bw = 2.6 + ((hash(x + i * 3, s + y) * 4) | 0), bh = shH - 3 - ((hash(i, x + s * 5) * 5) | 0), col = BOOK[(hash(i * 7, s + x) * BOOK.length) | 0];
+        if (hash(i + s * 13, x) > 0.93) { bx += 3; i++; continue; }
+        const by = sy + shH - 1.5 - bh;
+        ctx.fillStyle = hg(bx, bw, sh(col, 0.2), sh(col, -0.35)); ctx.fillRect(bx, by, bw, bh);
+        R(bx, by + 2, bw, 0.6, 'rgba(220,180,90,0.55)'); R(bx, by + bh - 3, bw, 0.6, 'rgba(220,180,90,0.45)');
+        bx += bw + 0.5; i++;
+      }
+      box(x + 2, sy + shH - 1.5, w - 4, 2.5, '#4a2e16');
+    }
+    ctx.fillStyle = vg(top, hh, 'rgba(0,0,0,0.25)', 'rgba(0,0,0,0)'); ctx.fillRect(x, top, w, hh * 0.4);
+  },
+  desk(x, y, w, h) {
+    softShadow(x + w / 2, y + h - 2, w / 2 + 2, 6, 0.5);
+    box(x + 4, y + h - 10, 3, 10, DWOOD); box(x + w - 7, y + h - 10, 3, 10, DWOOD);
+    box(x + 2, y + 2, w - 4, h - 10, WOOD); R(x + 6, y + 4, w - 12, h - 15, '#24402e'); R(x + 6, y + 4, w - 12, 0.6, 'rgba(255,255,255,0.08)');
+    box(x + 2, y + h - 10, w - 4, 4, sh(WOOD, -0.15)); C(x + w / 2, y + h - 8, 0.9, '#c9a24a');
+    for (let i = 0; i < 3; i++) { ctx.save(); ctx.translate(x + 14 + i * 9, y + 10); ctx.rotate((hash(i, 3) - 0.5) * 0.6); R(-4, -3, 8, 10, '#ddd4bc'); ctx.restore(); }
+    C(x + w - 12, y + 9, 2.6, '#14141c'); L(x + w - 11, y + 7, x + w - 7, y + 1, '#e8e0d0', 0.8);
+  },
+  safe(x, y, w, h) {
+    softShadow(x + 16, y + 28, 12, 5, 0.55);
+    ctx.fillStyle = vg(y - 8, h + 6, '#6a7078', '#2e3236'); ctx.fillRect(x + 3, y - 8, w - 6, h + 5);
+    R(x + 3, y - 8, w - 6, 0.8, '#9aa0a8'); R(x + 6, y - 5, w - 12, h - 2, 'rgba(0,0,0,0.25)');
+    for (const [rx, ry] of [[6, -6], [w - 7, -6], [6, h - 6], [w - 7, h - 6]]) C(x + rx, y + ry, 0.8, '#9aa0a8');
+    C(x + 14, y + 8, 6, '#1e2124'); C(x + 14, y + 8, 4.5, rg(x + 14, y + 8, 5, '#a8aeb6', '#50565e', x + 12.5, y + 6.5));
+    for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5; C(x + 14 + Math.cos(a) * 5.4, y + 8 + Math.sin(a) * 5.4, 0.3, '#d8dce0'); }
+    R(x + 23, y + 2, 2, 12, '#a0a6ae'); R(x + 9, y + 18, 10, 2.5, '#b8a060');
+  },
+  window(x, y, w, h, o) {
+    const top = y - 27, hh = 39 + (o.round ? 0 : 0), cx = x + w / 2;
+    const lt = lightT > 0 ? lightT * 3 : 0;
+    ctx.save();
+    if (o.round) { ctx.beginPath(); ctx.arc(cx, y - 6, 15, 0, 7); C(cx, y - 6, 17, '#3a2414'); ctx.beginPath(); ctx.arc(cx, y - 6, 14, 0, 7); ctx.clip(); }
+    else { box(x + 3, top - 2, w - 6, hh + 4, '#3a2414'); ctx.beginPath(); ctx.rect(x + 6, top + 1, w - 12, hh - 2); ctx.clip(); }
+    ctx.fillStyle = vg(top, hh, lt ? '#c8d0f0' : '#0a1226', lt ? '#8090c0' : '#1e2e50'); ctx.fillRect(x, top - 4, w, hh + 8);
+    C(x + w - 15, top + 9, 4.5, '#e8e8d0'); C(x + w - 15, top + 9, 9, 'rgba(230,230,200,0.1)');
+    P([x, top + hh, x + 10, top + hh - 10, x + 18, top + hh - 6, x + 30, top + hh - 14, x + w, top + hh - 8, x + w, top + hh + 4, x, top + hh + 4], '#05070c');
+    ctx.strokeStyle = 'rgba(170,190,230,0.35)'; ctx.lineWidth = 0.5;
+    for (let i = 0; i < 7; i++) { const rx = x + 8 + ((hash(i, 2) * 50 + now * 6) % (w - 14)), ry = top + ((now * 70 + i * 23) % hh); ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 0.6, ry + 4); ctx.stroke(); }
+    ctx.restore();
+    if (!o.round) {
+      box(cx - 1, top + 1, 2, hh - 2, '#3a2414'); box(x + 6, top + hh / 2 - 1, w - 12, 2, '#3a2414');
+      for (const side of [-1, 1]) { const cxs = side < 0 ? x + 1 : x + w - 9; ctx.fillStyle = hg(cxs, 8, '#6a1018', '#3a060c'); ctx.fillRect(cxs, top - 4, 8, hh + 22); for (let i = 0; i < 3; i++) R(cxs + 1.5 + i * 2.5, top - 4, 0.7, hh + 22, 'rgba(0,0,0,0.25)'); R(cxs, top + hh * 0.55, 8, 2, GOLD); }
+      R(x, top - 6, w, 2.5, GOLD);
+    } else { L(cx - 14, y - 6, cx + 14, y - 6, '#3a2414', 2); L(cx, y - 20, cx, y + 8, '#3a2414', 2); }
+  },
+  painting(x, y, w, h, o) {
+    const top = y - 25, hh = 34;
+    softShadow(x + w / 2, top + hh + 2, w / 2, 3, 0.4);
+    ctx.fillStyle = hg(x + 2, w - 4, '#e0b860', '#6a4a14'); ctx.fillRect(x + 2, top, w - 4, hh);
+    ctx.fillStyle = vg(top, hh, 'rgba(255,240,180,0.35)', 'rgba(0,0,0,0.35)'); ctx.fillRect(x + 2, top, w - 4, hh);
+    R(x + 4.5, top + 2.5, w - 9, hh - 5, '#4a3410'); R(x + 5.5, top + 3.5, w - 11, hh - 7, '#14100a');
+    for (let i = 0; i < (w - 4) / 4; i++) { C(x + 4 + i * 4, top + 1.2, 0.5, 'rgba(255,240,180,0.5)'); C(x + 4 + i * 4, top + hh - 1.2, 0.5, 'rgba(0,0,0,0.4)'); }
+    const f = ART[o.art];
+    if (f) { ctx.save(); ctx.beginPath(); ctx.rect(x + 6, top + 4, w - 12, hh - 8); ctx.clip(); f(x + 6, top + 4, w - 12, hh - 8); ctx.fillStyle = 'rgba(255,230,180,0.05)'; ctx.fillRect(x + 6, top + 4, w - 12, (hh - 8) / 2); for (let i = 0; i < 20; i++) R(x + 6 + hash(i, x) * (w - 12), top + 4 + hash(x, i) * (hh - 8), 1.5, 0.3, 'rgba(0,0,0,0.25)'); ctx.restore(); }
+    if (o.art !== 'eyes' && o.art !== 'tree') { box(x + w / 2 - 6, y + 13.5, 12, 3.5, '#a08040'); }
+  },
+  mirror(x, y, w) {
+    const cx = x + w / 2, cy = y - 7;
+    E(cx, cy, 13, 19, '#6a4a14'); ctx.fillStyle = hg(cx - 12, 24, '#e8c070', '#7a5418'); ctx.beginPath(); ctx.ellipse(cx, cy, 12, 18, 0, 0, 7); ctx.fill();
+    const g = ctx.createLinearGradient(cx - 10, cy - 16, cx + 10, cy + 16); g.addColorStop(0, '#8a96a4'); g.addColorStop(0.5, '#3a4450'); g.addColorStop(1, '#1a2028');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, 9.5, 15.5, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(cx - 6, cy - 6); ctx.lineTo(cx - 1, cy - 12); ctx.moveTo(cx - 5, cy - 1); ctx.lineTo(cx + 2, cy - 9); ctx.stroke();
+    for (let i = 0; i < 8; i++) C(cx - 8 + hash(i, 3) * 16, cy - 12 + hash(3, i) * 24, 0.8, 'rgba(200,200,190,0.15)');
+  },
+  candle(x, y, w, h, o) {
+    const cx = x + 16;
+    if (o.solid) { softShadow(cx, y + 28, 6, 2.5, 0.5); box(cx - 1.2, y + 4, 2.4, 22, '#8a7040'); E(cx, y + 27, 5, 2, '#7a6030'); E(cx, y + 4, 4.5, 1.6, '#a88a4a'); candleStick(cx, y + 3, 1, !o.lit || F[o.lit]); }
+    else { const cy = y + (o.ly != null ? o.ly * T : 0) + 12; E(cx, cy, 4.2, 1.6, '#a88a4a'); E(cx, cy - 0.4, 3, 1, '#d0b060'); candleStick(cx, cy - 0.5, 0.9, true); }
+  },
+  candelabra(x, y) {
+    const cx = x + 16; softShadow(cx, y + 28, 9, 3.5, 0.55);
+    E(cx, y + 27, 7, 2.6, '#6a5424'); E(cx, y + 26, 5, 1.8, '#a88a4a');
+    ctx.fillStyle = hg(cx - 1.5, 3, '#d0b060', '#6a5424'); ctx.fillRect(cx - 1.5, y - 10, 3, 37);
+    for (const yy of [y + 6, y + 16]) E(cx, yy, 2.6, 1.6, '#b8984a');
+    ctx.strokeStyle = '#a88a4a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(cx - 10, y - 13); ctx.quadraticCurveTo(cx - 10, y - 6, cx, y - 6); ctx.quadraticCurveTo(cx + 10, y - 6, cx + 10, y - 13); ctx.stroke();
+    for (const dx of [-10, 0, 10]) { E(cx + dx, y - 13, 2.8, 1.2, '#c8a858'); candleStick(cx + dx, y - 13.5, 0.8, true); }
+  },
+  pumpkin(x, y) {
+    const cx = x + 16, cy = y + 20; softShadow(cx, y + 28, 14, 4, 0.55);
+    pumpkinBody(cx, cy, 13, 10, true); stem(cx, cy - 9.5, 1);
+  },
+  plant(x, y) {
+    const cx = x + 16; softShadow(cx, y + 28, 10, 3.5, 0.5);
+    ctx.fillStyle = hg(cx - 8, 16, '#8a4a30', '#4a2416'); ctx.beginPath(); ctx.moveTo(cx - 8, y + 13); ctx.lineTo(cx + 8, y + 13); ctx.lineTo(cx + 6, y + 28); ctx.lineTo(cx - 6, y + 28); ctx.fill();
+    box(cx - 9, y + 11, 18, 3, '#9a5a3a'); E(cx, y + 12.5, 7.5, 1.6, '#1a1008');
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + (i - 2.5) * 0.4, l = 13 + hash(i, 1) * 7; ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(cx, y + 12); ctx.quadraticCurveTo(cx + Math.cos(a) * l * 0.5 + 2, y + 12 + Math.sin(a) * l * 0.5, cx + Math.cos(a) * l, y + 12 + Math.sin(a) * l); ctx.stroke(); E(cx + Math.cos(a) * l, y + 12 + Math.sin(a) * l, 2.2, 1, i === 2 ? '#4a6a2a' : '#5a4020', a); }
+    ctx.lineCap = 'butt';
+  },
+  stand(x, y) {
+    softShadow(x + 16, y + 28, 10, 3.5, 0.5);
+    ctx.fillStyle = hg(x + 14.5, 3, '#6a4428', '#2a180c'); ctx.fillRect(x + 14.5, y + 12, 3, 15); E(x + 16, y + 27, 6, 2, '#3a2414');
+    E(x + 16, y + 13, 11.5, 6.5, '#2a180c'); E(x + 16, y + 12, 11, 6, rg(x + 16, y + 12, 12, '#7a5030', '#4a2e18', x + 13, y + 10));
+  },
+  gate(x, y) {
+    const top = y - 18;
+    for (let i = 0; i < 6; i++) { ctx.fillStyle = hg(x + 3 + i * 5, 2, '#7a7a82', '#3a3a40'); ctx.fillRect(x + 3 + i * 5, top, 2, y + T - top); C(x + 4 + i * 5, top, 1.4, '#6a6a72'); }
+    box(x + 1, top + 14, T - 2, 2.5, '#5a5a62'); box(x + 1, y + 20, T - 2, 2.5, '#5a5a62');
+    for (let i = 0; i < 6; i++) C(x + 10 + i * 2, y + 6 + Math.abs(i - 2.5) * 1.5, 1, '#6a6a6a');
+    box(x + 13, y + 10, 7, 7, '#9a8030'); ctx.strokeStyle = '#7a7a7a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x + 16.5, y + 10, 2.4, Math.PI, 0); ctx.stroke();
+    for (let i = 0; i < 4; i++) R(x + 3 + hash(i, 1) * 26, top + hash(1, i) * 40, 1.5, 2.5, 'rgba(120,50,20,0.6)');
+  },
+  ladder(x, y) { softShadow(x + 16, y + 62, 12, 3, 0.4); box(x + 8, y + 2, 3, T + 28, '#7a5a32'); box(x + 21, y + 2, 3, T + 28, '#7a5a32'); for (let i = 0; i < 7; i++) box(x + 9, y + 6 + i * 8, 14, 2, '#6a4a28'); },
+  bed(x, y, w, h) {
+    softShadow(x + w / 2, y + h - 2, w / 2 + 2, 6, 0.55);
+    box(x + 1, y - 16, w - 2, 18, '#6a4428'); ctx.fillStyle = '#7a5434'; ctx.beginPath(); ctx.moveTo(x + 1, y - 14); ctx.quadraticCurveTo(x + w / 2, y - 26, x + w - 1, y - 14); ctx.fill();
+    R(x + 8, y - 12, w - 16, 10, 'rgba(0,0,0,0.25)');
+    box(x + 2, y, w - 4, h - 2, '#5a3a22');
+    ctx.fillStyle = vg(y + 2, h - 8, '#efe6e0', '#c8bcb4'); ctx.fillRect(x + 4, y + 2, w - 8, h - 10);
+    E(x + w / 2, y + 10, 16, 6.5, '#f8f2ee'); E(x + w / 2, y + 11.5, 15, 4, 'rgba(0,0,0,0.08)');
+    const qy = y + 22; ctx.fillStyle = vg(qy, h - 30, '#c06088', '#7a3050'); ctx.fillRect(x + 4, qy, w - 8, h - 30);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) R(x + 5 + i * ((w - 10) / 4), qy + 1 + j * ((h - 32) / 4), (w - 10) / 4 - 1, (h - 32) / 4 - 1, ['rgba(255,220,230,0.12)', 'rgba(80,20,40,0.15)'][(i + j) % 2]);
+    R(x + 4, qy, w - 8, 2.5, '#e8d0d8');
+    if (!F.bedSeen) { ctx.fillStyle = rg(x + w / 2, y + 50, 22, 'rgba(255,220,235,0.35)', 'rgba(60,10,30,0.3)', x + w / 2 - 5, y + 42); ctx.beginPath(); ctx.ellipse(x + w / 2, y + 52, 13, 22, 0, 0, 7); ctx.fill(); E(x + w / 2, y + 30, 8, 7, 'rgba(255,220,235,0.25)'); }
+    else { C(x + w / 2 + 8, y + 8, 4.5, '#8a5a2a'); C(x + w / 2 + 5, y + 4.5, 1.8, '#8a5a2a'); C(x + w / 2 + 11, y + 4.5, 1.8, '#8a5a2a'); C(x + w / 2 + 8, y + 15, 5, '#7a4a20'); }
+  },
+  doll(x, y) {
+    const cx = x + 16; softShadow(cx, y + 28, 10, 3.5, 0.5);
+    box(x + 7, y + 20, 2.5, 8, DWOOD); box(x + 22.5, y + 20, 2.5, 8, DWOOD); box(x + 6, y + 12, 20, 10, '#6a4428'); box(x + 6, y - 6, 20, 6, '#5a3820'); box(x + 7, y - 6, 2.5, 20, DWOOD); box(x + 22.5, y - 6, 2.5, 20, DWOOD);
+    ctx.fillStyle = vg(y + 6, 14, '#9a4a6a', '#5a2040'); ctx.beginPath(); ctx.moveTo(cx - 4, y + 6); ctx.lineTo(cx + 4, y + 6); ctx.lineTo(cx + 8, y + 19); ctx.lineTo(cx - 8, y + 19); ctx.fill();
+    for (let i = 0; i < 5; i++) C(cx - 7 + i * 3.5, y + 19, 1.6, '#f0e8f0');
+    limb(cx - 4, y + 8, cx - 7, y + 15, 2, '#e8dccc'); limb(cx + 4, y + 8, cx + 7, y + 15, 2, '#e8dccc');
+    E(cx, y + 0.5, 6, 6.5, '#6a3416');
+    const turned = F.matches, fx = turned ? -2 : 0;
+    ctx.fillStyle = rg(cx + fx, y + 1, 6, '#fbf2ea', '#cbbcac', cx + fx - 1.5, y - 1); ctx.beginPath(); ctx.ellipse(cx + fx, y + 1, 4.8, 5.2, 0, 0, 7); ctx.fill();
+    C(cx + fx - 1.8, y + 0.8, 1.1, '#111'); C(cx + fx - 2, y + 0.5, 0.35, '#fff');
+    if (!turned) { ctx.strokeStyle = '#3a1a1a'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(cx + 1, y); ctx.lineTo(cx + 2.8, y + 1.6); ctx.moveTo(cx + 2.8, y); ctx.lineTo(cx + 1, y + 1.6); ctx.stroke(); }
+    E(cx + fx, y + 3.6, 1, 0.5, '#a02a3a'); E(cx + fx - 3, y + 2.6, 1.2, 0.7, 'rgba(230,120,130,0.4)');
+    ctx.strokeStyle = '#7a3a18'; ctx.lineWidth = 0.7; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(cx - 5 + i * 2, y - 4); ctx.quadraticCurveTo(cx - 7 + i * 2.5, y + 3, cx - 6 + i * 2.4, y + 7); ctx.stroke(); }
+  },
+  musicbox(x, y) {
+    const cx = x + 16; softShadow(cx, y + 28, 10, 3.5, 0.5);
+    ctx.fillStyle = hg(cx - 1, 2, '#6a4428', '#2a180c'); ctx.fillRect(cx - 1, y + 14, 2, 14);
+    E(cx, y + 14, 11.5, 5.5, '#2a180c'); E(cx, y + 13, 11, 5, rg(cx, y + 13, 12, '#7a5030', '#4a2e18', cx - 3, y + 11));
+    box(cx - 7, y + 4, 14, 8, '#7a2e2e'); R(cx - 7, y + 7, 14, 0.8, GOLD);
+    ctx.fillStyle = '#5a1e1e'; ctx.beginPath(); ctx.moveTo(cx - 7, y + 4); ctx.lineTo(cx + 7, y + 4); ctx.lineTo(cx + 6, y - 5); ctx.lineTo(cx - 6, y - 5); ctx.fill(); R(cx - 5, y - 3, 10, 6, '#a8aeb8');
+    const sp = now * 2; L(cx, y + 4, cx, y - 1, '#e8e0e0', 0.6); E(cx, y + 1, 1.6 * Math.abs(Math.cos(sp)) + 0.4, 0.7, '#f0d0e0'); C(cx, y - 1.5, 0.9, '#f8e8e0');
+    R(cx + 7, y + 7, 3, 1, GOLD);
+  },
+  drawing(x, y) {
+    ctx.save(); ctx.translate(x + 16, y - 8); ctx.rotate(-0.05);
+    softShadow(1, 15, 12, 2, 0.4); R(-11, -13, 22, 27, '#efe8d6'); R(-11, -13, 22, 27, 'rgba(0,0,0,0)');
+    R(-3, -15, 6, 3, 'rgba(230,220,180,0.7)');
+    ctx.lineCap = 'round'; ctx.lineWidth = 1.2;
+    C(-5, -5, 2.6, '#e86a9a'); ctx.strokeStyle = '#e86a9a'; ctx.beginPath(); ctx.moveTo(-5, -2.5); ctx.lineTo(-5, 4); ctx.moveTo(-5, 4); ctx.lineTo(-7, 9); ctx.moveTo(-5, 4); ctx.lineTo(-3, 9); ctx.stroke();
+    P([-8, 2, -2, 2, -5, -2], '#e86a9a');
+    C(5, -5, 3.2, '#f08a2a'); ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(5, -2); ctx.lineTo(5, 4); ctx.moveTo(5, 4); ctx.lineTo(3, 9); ctx.moveTo(5, 4); ctx.lineTo(7, 9); ctx.stroke();
+    ctx.strokeStyle = '#c03030'; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(3, 0); ctx.stroke();
+    C(-0.6, -10, 1.2, '#d02020'); C(0.6, -10, 1.2, '#d02020'); P([-1.7, -9.6, 1.7, -9.6, 0, -7.6], '#d02020');
+    ctx.lineCap = 'butt'; ctx.restore();
+  },
+  blocks(x, y) {
+    softShadow(x + 16, y + 26, 12, 3, 0.4);
+    const blk = (bx, by, c, ch) => { box(bx, by, 9, 9, c); R(bx + 1.5, by + 1.5, 6, 6, 'rgba(255,255,255,0.15)'); ctx.font = `bold 6px ${FONT}`; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(ch, bx + 4.5, by + 7); ctx.textAlign = 'left'; };
+    blk(x + 5, y + 16, '#c84a4a', '놀'); blk(x + 15, y + 16, '#4a7ac8', '아'); blk(x + 10, y + 7, '#c8a83a', '줘');
+  },
+  chest(x, y, w, h) {
+    softShadow(x + w / 2, y + h - 2, w / 2, 5, 0.5);
+    box(x + 3, y + 6, w - 6, h - 9, '#7a4a2a'); ctx.fillStyle = vg(y, 8, '#9a6238', '#6a3e20'); rrect(x + 2, y, w - 4, 9, 3); ctx.fill();
+    R(x + 3, y + 9, w - 6, 1, 'rgba(0,0,0,0.5)'); box(x + 3, y + 14, w - 6, 3, '#c9a24a'); box(x + w / 2 - 2.5, y + 7, 5, 7, '#c9a24a');
+    for (let i = 0; i < 5; i++) { const sx = x + 8 + i * 11, sy = y + 22; ctx.fillStyle = '#f0d860'; ctx.beginPath(); for (let j = 0; j < 10; j++) { const a = j * Math.PI / 5 - Math.PI / 2, r = j % 2 ? 1 : 2.4; ctx.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r); } ctx.fill(); }
+  },
+  statue(x, y) {
+    softShadow(x + 16, y + 28, 13, 4, 0.55);
+    box(x + 5, y + 14, 22, 14, '#7a7a82'); box(x + 3, y + 12, 26, 3, '#8a8a92');
+    ctx.fillStyle = hg(x + 9, 14, '#d0d0d6', '#6a6a72');
+    ctx.beginPath(); ctx.moveTo(x + 8, y - 18); ctx.lineTo(x + 24, y - 18); ctx.quadraticCurveTo(x + 26, y - 4, x + 23, y + 12); ctx.lineTo(x + 9, y + 12); ctx.quadraticCurveTo(x + 6, y - 4, x + 8, y - 18); ctx.fill();
+    ctx.strokeStyle = 'rgba(60,60,70,0.4)'; ctx.lineWidth = 0.7; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x + 10 + i * 3, y - 10); ctx.quadraticCurveTo(x + 9 + i * 3.5, y, x + 11 + i * 3, y + 11); ctx.stroke(); }
+    E(x + 16, y - 18, 8, 3, '#b8b8c0'); E(x + 16, y - 20, 3, 2, '#f0f0f0'); for (let i = 0; i < 4; i++) C(x + 13 + i * 2, y - 21 + (i % 2), 0.7, '#e8e8e8');
+  },
+  vase(x, y) {
+    softShadow(x + 16, y + 28, 9, 3.5, 0.5);
+    ctx.fillStyle = hg(x + 9, 14, '#9a9aa2', '#4a4a52'); ctx.fillRect(x + 9, y + 12, 14, 16); box(x + 7, y + 10, 18, 3, '#a0a0a8'); box(x + 7, y + 26, 18, 2, '#7a7a82');
+    ctx.fillStyle = rg(x + 16, y + 3, 9, '#6a80c8', '#1a2450', x + 13, y); ctx.beginPath(); ctx.moveTo(x + 13, y - 5); ctx.quadraticCurveTo(x + 8, y + 2, x + 12, y + 10); ctx.lineTo(x + 20, y + 10); ctx.quadraticCurveTo(x + 24, y + 2, x + 19, y - 5); ctx.fill();
+    ctx.strokeStyle = 'rgba(230,240,255,0.5)'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.arc(x + 16, y + 3, 3, 0, 7); ctx.stroke();
+    L(x + 16, y - 5, x + 15, y - 15, '#2a5a22', 1); E(x + 13.5, y - 10, 2.2, 1, '#2a6a2a', -0.5);
+    const rx = x + 15, ry = y - 18;
+    for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + now * 0.1; E(rx + Math.cos(a) * 2.2, ry + Math.sin(a) * 1.8, 2.4, 1.8, '#9a0c1a', a); }
+    C(rx, ry, 2.2, '#c81828'); ctx.strokeStyle = '#6a0410'; ctx.lineWidth = 0.4; ctx.beginPath(); ctx.arc(rx, ry, 1.2, 0, 5); ctx.stroke();
+    const fall = (now * 12) % 30; E(rx + 4 + Math.sin(now * 3) * 2, ry + fall, 1.6, 1, '#b01020', now);
+  },
+  bench(x, y, w) {
+    softShadow(x + w / 2, y + 26, w / 2, 4, 0.5);
+    for (const lx of [x + 5, x + w - 8]) box(lx, y + 16, 3, 10, DWOOD);
+    box(x + 2, y + 9, w - 4, 8, WOOD); ctx.fillStyle = vg(y + 6, 6, '#7a2030', '#4a0e18'); rrect(x + 3, y + 5.5, w - 6, 6.5, 2.5); ctx.fill();
+    for (let i = 1; i < 4; i++) C(x + i * w / 4, y + 8.5, 0.7, '#3a0810');
+  },
+  curtain(x, y) {
+    const top = y - T * 1.45, hh = y + T - top - 2;
+    box(x - 2, top - 2, T + 4, 3, GOLD);
+    for (let i = 0; i < 6; i++) { const fx = x + 1 + i * 5; ctx.fillStyle = hg(fx, 5, '#8a1420', '#3a060c'); ctx.fillRect(fx, top, 5.2, hh); }
+    ctx.fillStyle = '#5a0a12'; ctx.beginPath(); ctx.moveTo(x + 1, y + T - 2); for (let i = 0; i <= 6; i++) ctx.quadraticCurveTo(x + 1 + i * 5 - 2.5, y + T + 1, x + 1 + i * 5, y + T - 2); ctx.lineTo(x + 31, y + T - 4); ctx.lineTo(x + 1, y + T - 4); ctx.fill();
+    box(x - 1, top + hh * 0.55, T + 2, 2.5, GOLD);
+    if (S && S.hidden && S.hidden.t === 'curtain') { E(x + 10, y + T - 3, 2.4, 1.4, '#e8e4dc'); E(x + 15, y + T - 3, 2.4, 1.4, '#e8e4dc'); }
+  },
+  altar(x, y, w, h) {
+    softShadow(x + w / 2, y + h - 2, w / 2 + 4, 7, 0.6);
+    box(x + 2, y + 2, w - 4, h - 6, '#1a1014'); R(x + 2, y + 2, w - 4, 1, '#3a2a30');
+    ctx.fillStyle = '#100a0e'; ctx.beginPath(); ctx.moveTo(x + 2, y + h - 6); for (let i = 0; i <= (w - 4) / 6; i++) ctx.quadraticCurveTo(x + 2 + i * 6 - 3, y + h, x + 2 + i * 6, y + h - 6); ctx.lineTo(x + w - 2, y + h - 8); ctx.lineTo(x + 2, y + h - 8); ctx.fill();
+    for (let i = 0; i < (w - 4) / 6; i++) C(x + 5 + i * 6, y + h - 3.5, 0.9, 'rgba(220,210,220,0.3)');
+    const cx = x + w / 2, cy = y + 16;
+    softShadow(cx, cy + 16, 24, 5, 0.5);
+    pumpkinBody(cx, cy, 24, 18, !!F.lit); stem(cx, cy - 17, 1.6);
+    if (F.lit) { ctx.fillStyle = rg(cx, cy, 40, 'rgba(255,170,60,0.25)', 'rgba(255,170,60,0)'); ctx.fillRect(cx - 40, cy - 40, 80, 80); }
+    ctx.save(); ctx.translate(x + 12, y + 30); ctx.rotate(-0.12); box(-6, -8, 12, 15, '#c9a24a'); R(-4.5, -6.5, 9, 12, '#d8d0c0'); E(0, -1, 3, 3.6, '#4a3a3a'); C(0, -3, 1.8, '#e8d8c8'); E(1, 2.5, 2, 1.6, '#d86a1a'); ctx.restore();
+    for (let i = 0; i < 5; i++) E(x + 30 + hash(i, 2) * 50, y + 28 + hash(2, i) * 10, 1.6, 1, '#7a0a14', i);
+  },
+  jun(x, y) {
+    softShadow(x + 32, y + 22, 30, 6, 0.5);
+    if (sprOK()) { drawFrame(SF.jun_lie[0], x + 32, y + 28, SPR_K.jun, false, 1); R(x + 4, y + 26, 5, 1, '#e8e0d0'); C(x + 4, y + 26.5, 0.8, '#3a1a10'); return; }
+    ctx.save(); ctx.translate(x + 56, y + 18); ctx.rotate(-Math.PI / 2 + 0.08); drawHuman(0, 0, 'down', 0, ST_JUN, false, 1, true, true); ctx.restore();
+    R(x + 4, y + 26, 5, 1, '#e8e0d0'); C(x + 4, y + 26.5, 0.8, '#3a1a10');
+  },
+  box(x, y) {
+    softShadow(x + 16, y + 28, 14, 4, 0.55);
+    box(x + 3, y + 2, 26, 25, '#6a5236');
+    for (let i = 1; i < 4; i++) R(x + 3, y + 2 + i * 6.25, 26, 0.7, 'rgba(0,0,0,0.45)');
+    grain(x + 3, y + 2, 26, 25, 0.08);
+    box(x + 3, y + 2, 3, 25, '#5a4228'); box(x + 26, y + 2, 3, 25, '#5a4228');
+    for (const [nx, ny] of [[4.5, 4], [27.5, 4], [4.5, 25], [27.5, 25]]) C(x + nx, y + ny, 0.6, '#1a1a1a');
+    if (hash(x, y) > 0.5) { R(x + 10, y + 11, 12, 6, '#d8cfb4'); R(x + 11.5, y + 13, 9, 0.6, '#4a3a2a'); R(x + 11.5, y + 15, 6, 0.6, '#4a3a2a'); }
+    R(x + 3, y + 2, 26, 3, 'rgba(200,190,170,0.15)');
+  },
+  rocker(x, y) {
+    const a = F.rockerScare ? 0 : Math.sin(now * 2.2) * 0.12; softShadow(x + 16, y + 28, 12, 4, 0.5);
+    ctx.save(); ctx.translate(x + 16, y + 26); ctx.rotate(a);
+    ctx.strokeStyle = '#3a2414'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, -24, 26, Math.PI * 0.32, Math.PI * 0.68); ctx.stroke();
+    box(-10, -14, 3, 12, DWOOD); box(7, -14, 3, 12, DWOOD); box(-11, -16, 22, 6, WOOD);
+    box(-10, -38, 3, 24, DWOOD); box(7, -38, 3, 24, DWOOD); box(-11, -40, 22, 4, WOOD);
+    for (let i = 0; i < 4; i++) box(-7 + i * 4.3, -36, 2, 20, sh(WOOD, -0.1));
+    ctx.restore();
+  },
+  web(x, y, w, h, o) {
+    ctx.save(); if (o.flip) { ctx.translate(x * 2 + T, 0); ctx.scale(-1, 1); }
+    const ox = x, oy = y - 8;
+    ctx.strokeStyle = 'rgba(210,210,220,0.3)'; ctx.lineWidth = 0.4;
+    for (let i = 0; i <= 6; i++) { const a = i * Math.PI / 12; ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + Math.cos(a) * 34, oy + Math.sin(a) * 34); ctx.stroke(); }
+    for (let r = 5; r <= 32; r += 4.5) { ctx.beginPath(); for (let i = 0; i <= 6; i++) { const a = i * Math.PI / 12, rr = r - (i % 2) * 1.2; i ? ctx.lineTo(ox + Math.cos(a) * rr, oy + Math.sin(a) * rr) : ctx.moveTo(ox + Math.cos(a) * rr, oy + Math.sin(a) * rr); } ctx.stroke(); }
+    C(ox + 14, oy + 10, 1.6, '#0a0a0a'); for (let i = 0; i < 4; i++) { L(ox + 14, oy + 10, ox + 11 + i * 2, oy + 7 + (i % 2) * 6, '#0a0a0a', 0.4); }
+    ctx.restore();
+  },
+  armchair(x, y) {
+    softShadow(x + 16, y + 28, 14, 4, 0.55);
+    ctx.fillStyle = rg(x + 16, y + 6, 18, '#7a1e28', '#3a0a10', x + 12, y); rrect(x + 3, y - 6, 26, 16, 6); ctx.fill();
+    ctx.fillStyle = rg(x + 16, y + 18, 14, '#8a2430', '#4a0e16', x + 13, y + 14); rrect(x + 7, y + 8, 18, 16, 3); ctx.fill();
+    for (const ax of [x + 2, x + 24]) { ctx.fillStyle = hg(ax, 6, '#7a1e28', '#3a0a10'); rrect(ax, y + 2, 6, 22, 3); ctx.fill(); }
+    box(x + 5, y + 24, 2.5, 4, DWOOD); box(x + 24.5, y + 24, 2.5, 4, DWOOD);
+    for (let i = 0; i < 3; i++) C(x + 10 + i * 6, y + 1, 0.7, '#2a060a');
+  },
+  globe(x, y) {
+    softShadow(x + 16, y + 28, 9, 3, 0.5);
+    E(x + 16, y + 27, 7, 2.4, '#5a4424'); ctx.fillStyle = hg(x + 15, 2, '#c0a050', '#5a4424'); ctx.fillRect(x + 15, y + 15, 2, 12);
+    ctx.strokeStyle = '#b09048'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(x + 16, y + 6, 11, Math.PI * 0.6, Math.PI * 2.1); ctx.stroke();
+    C(x + 16, y + 6, 9, rg(x + 16, y + 6, 10, '#4a7aa0', '#14304a', x + 13, y + 3));
+    P([x + 11, y + 2, x + 15, y + 0, x + 17, y + 4, x + 14, y + 8, x + 11, y + 6], '#6a8a4a'); P([x + 18, y + 7, x + 22, y + 6, x + 21, y + 11, x + 18, y + 12], '#6a8a4a');
+    C(x + 19, y + 9, 1.2, '#d02020'); E(x + 13, y + 2, 2.5, 1.5, 'rgba(255,255,255,0.2)');
+  },
+  shelf(x, y, w) {
+    const sy = y + 4; box(x + 2, sy, w - 4, 3, WOOD); softShadow(x + w / 2, sy + 5, w / 2 - 2, 2, 0.4);
+    for (let i = 0; i < (w - 8) / 9; i++) {
+      const jx = x + 6 + i * 9, jh = 9 + hash(i, 3) * 4;
+      ctx.fillStyle = hg(jx, 7, 'rgba(180,200,190,0.5)', 'rgba(80,100,90,0.5)'); ctx.fillRect(jx, sy - jh, 7, jh);
+      R(jx + 1, sy - jh * 0.6, 5, jh * 0.6 - 0.5, ['rgba(200,60,80,0.6)', 'rgba(220,180,60,0.6)', 'rgba(90,160,90,0.6)'][i % 3]);
+      R(jx, sy - jh - 2, 7, 2, '#7a5a3a'); R(jx + 1, sy - jh * 0.75, 5, 3, '#e0d8c0'); R(jx + 1, sy - jh + 1, 1, jh - 2, 'rgba(255,255,255,0.25)');
+    }
+  },
+  page(x, y, w, h) {
+    const cx = x + 16, cy = y + h / 2, a = 0.5 + 0.5 * Math.sin(now * 4);
+    ctx.fillStyle = rg(cx, cy, 15, `rgba(255,240,180,${0.18 + 0.18 * a})`, 'rgba(255,240,180,0)'); ctx.fillRect(cx - 15, cy - 15, 30, 30);
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(-0.15);
+    softShadow(1, 8, 8, 2, 0.4);
+    ctx.fillStyle = vg(-8, 16, '#efe6cc', '#cfc2a0'); ctx.fillRect(-6, -8, 12, 16);
+    P([3, -8, 6, -8, 6, -5], '#b8aa88');
+    for (let i = 0; i < 5; i++) R(-4, -5 + i * 2.6, 7 - (i === 4 ? 3 : 0), 0.5, 'rgba(60,40,30,0.6)');
+    ctx.restore();
+    const sp = (now * 1.5) % 1; C(cx + 7, cy - 8 - sp * 4, 0.8 * (1 - sp), 'rgba(255,250,220,0.9)');
+  },
+};
+const ART = {
+  moon(x, y, w, h) {
+    ctx.fillStyle = vg(y, h, '#0a1020', '#1e2a44'); ctx.fillRect(x, y, w, h);
+    C(x + w - 10, y + 7, 4, '#e8e4c8'); C(x + w - 10, y + 7, 8, 'rgba(230,230,200,0.12)');
+    P([x + 6, y + h, x + 6, y + h - 12, x + 14, y + h - 18, x + 22, y + h - 12, x + 22, y + h - 16, x + 28, y + h - 22, x + 34, y + h - 16, x + 34, y + h - 12, x + w - 6, y + h - 12, x + w - 6, y + h], '#05070c');
+    R(x + 26, y + h - 17, 3, 3, '#ff9a2a'); C(x + 27.5, y + h - 15.5, 4, 'rgba(255,150,40,0.25)');
+  },
+  family(x, y, w, h) {
+    ctx.fillStyle = vg(y, h, '#3a3020', '#1a140c'); ctx.fillRect(x, y, w, h);
+    portrait(x + w * 0.22 - 10, y, 20, h, { cloth: '#2a3a4a', skin: '#e0c8b0', hair: '#5a3a20', long: true });
+    portrait(x + w * 0.5 - 11, y - 2, 22, h + 2, { cloth: '#1a1a22', skin: '#c8b098', hair: '#1a1010' });
+    portrait(x + w * 0.78 - 8, y + 5, 16, h - 5, { cloth: '#e8e0d0', skin: '#ecd8c4', hair: '#1a1010', long: true });
+    ctx.strokeStyle = 'rgba(150,20,20,0.9)'; ctx.lineWidth = 0.8;
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x + w * 0.78 - 6, y + 8 + i * 1.6); ctx.lineTo(x + w * 0.78 + 6, y + 12 + i * 1.6); ctx.stroke(); }
+    pumpkinBody(x + w * 0.78 + 4, y + h - 4, 4, 3.4, false);
+  },
+  eyes(x, y, w, h) {
+    ctx.fillStyle = rg(x + w / 2, y + h / 2, w * 0.6, '#3a1c18', '#0a0404'); ctx.fillRect(x, y, w, h);
+    for (const ex of [x + w * 0.3, x + w * 0.7]) {
+      const ey = y + h / 2;
+      E(ex, ey, 8, 5.5, '#1a0a08'); E(ex, ey, 7, 4.5, rg(ex, ey, 7, '#f0e8d8', '#a89880'));
+      ctx.strokeStyle = 'rgba(180,30,30,0.5)'; ctx.lineWidth = 0.3; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(ex - 7 + i * 0.5, ey - 1 + i); ctx.lineTo(ex - 3, ey); ctx.stroke(); }
+      const dx = clamp((S.x - ex) / 150, -1, 1) * 3.5, dy = clamp((S.y - ey) / 150, -1, 1) * 1.6;
+      C(ex + dx, ey + dy, 2.8, '#5a2a10'); C(ex + dx, ey + dy, 1.3, '#000'); C(ex + dx - 0.8, ey + dy - 0.8, 0.5, '#fff');
+      ctx.strokeStyle = '#0a0404'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(ex, ey, 7, 4.5, 0, Math.PI, 0); ctx.stroke();
+    }
+  },
+  tree(x, y, w, h) {
+    ctx.fillStyle = vg(y, h, '#2a2430', '#141018'); ctx.fillRect(x, y, w, h);
+    C(x + 8, y + 7, 3, 'rgba(230,220,200,0.6)');
+    ctx.strokeStyle = '#050304'; ctx.lineCap = 'round';
+    const br = (bx, by, a, l, wd) => { if (l < 2.5) return; const ex = bx + Math.cos(a) * l, ey = by + Math.sin(a) * l; ctx.lineWidth = wd; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke(); br(ex, ey, a - 0.5, l * 0.68, wd * 0.65); br(ex, ey, a + 0.45, l * 0.65, wd * 0.65); };
+    br(x + w / 2, y + h, -Math.PI / 2, 10, 3); ctx.lineCap = 'butt';
+    for (const [px2, py2] of [[x + w / 2 - 12, y + 9], [x + w / 2 + 11, y + 7], [x + w / 2 + 4, y + 4]]) { L(px2, py2 - 3, px2, py2 - 1, '#050304', 0.4); pumpkinBody(px2, py2 + 1, 2.4, 2, true); }
+  },
+  mom(x, y, w, h) { ctx.fillStyle = vg(y, h, '#3a5040', '#162018'); ctx.fillRect(x, y, w, h); portrait(x + w / 2 - 12, y, 24, h, { cloth: '#4a5a7a', skin: '#ecd4bc', hair: '#6a4022', long: true, smile: true }); },
+  dad(x, y, w, h) { ctx.fillStyle = vg(y, h, '#3a1a1a', '#140808'); ctx.fillRect(x, y, w, h); portrait(x + w / 2 - 12, y, 24, h, { cloth: '#121218', skin: '#c8ac94', hair: '#14100c', angry: true, beard: true }); },
+  girl(x, y, w, h) {
+    ctx.fillStyle = vg(y, h, '#2a3050', '#0e1020'); ctx.fillRect(x, y, w, h);
+    R(x + 2, y + 2, 12, 10, '#3a4a6a'); L(x + 8, y + 2, x + 8, y + 12, '#1a1a2a', 0.6); C(x + 5, y + 5, 1.2, '#e8e4c8');
+    portrait(x + w / 2 - 11, y + 1, 22, h - 1, { cloth: '#e8e0d0', skin: '#f0dcc8', hair: '#1a1210', long: true, smile: F.hook, sad: !F.hook, creepy: F.hook });
+    pumpkinBody(x + w / 2 + 2, y + h - 3, 5, 4, false);
+  },
+  lady(x, y, w, h) {
+    ctx.fillStyle = vg(y, h, '#3a1c22', '#140a0c'); ctx.fillRect(x, y, w, h);
+    if (F.hook) { R(x + 6, y + h - 6, w - 12, 1.5, 'rgba(0,0,0,0.4)'); E(x + w / 2, y + h - 5, 8, 1.5, 'rgba(0,0,0,0.3)'); return; }
+    portrait(x + w / 2 - 12, y, 24, h, { cloth: '#b01424', skin: '#ecdcd0', hair: '#2a1a10', long: true, lips: true });
+  },
+};
+function portrait(x, y, w, h, o) {
+  const cx = x + w / 2, cy = y + h * 0.42, fs = Math.min(w, h) * 0.26;
+  ctx.fillStyle = rg(cx, y + h + 2, w * 0.55, sh(o.cloth, 0.15), sh(o.cloth, -0.4), cx - 3, y + h - 4); ctx.beginPath(); ctx.ellipse(cx, y + h + 3, w * 0.48, h * 0.38, 0, 0, 7); ctx.fill();
+  R(cx - fs * 0.35, cy + fs * 0.8, fs * 0.7, fs * 0.9, sh(o.skin, -0.2));
+  if (o.long) E(cx, cy + fs * 0.6, fs * 1.25, fs * 1.8, o.hair);
+  ctx.fillStyle = rg(cx, cy, fs * 1.2, o.skin, sh(o.skin, -0.3), cx - fs * 0.3, cy - fs * 0.4); ctx.beginPath(); ctx.ellipse(cx, cy, fs * 0.85, fs * 1.08, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = o.hair; ctx.beginPath(); ctx.ellipse(cx, cy - fs * 0.55, fs * 0.95, fs * 0.65, 0, Math.PI * 0.95, Math.PI * 2.05); ctx.fill();
+  E(cx - fs * 0.3, cy - fs * 0.85, fs * 0.25, fs * 0.1, 'rgba(255,255,255,0.15)');
+  const ey = cy + fs * 0.05, ed = fs * 0.36;
+  for (const s of [-1, 1]) {
+    E(cx + s * ed, ey, fs * 0.2, fs * 0.12, o.angry ? '#e8d0c0' : '#f0ece4'); C(cx + s * ed, ey, fs * 0.1, o.angry ? '#8a0000' : o.creepy ? '#000' : '#3a2410');
+    ctx.strokeStyle = sh(o.hair, -0.2); ctx.lineWidth = fs * 0.08; ctx.beginPath();
+    if (o.angry) { ctx.moveTo(cx + s * ed * 1.6, ey - fs * 0.35); ctx.lineTo(cx + s * ed * 0.4, ey - fs * 0.18); }
+    else if (o.sad) { ctx.moveTo(cx + s * ed * 1.6, ey - fs * 0.2); ctx.lineTo(cx + s * ed * 0.4, ey - fs * 0.33); }
+    else { ctx.moveTo(cx + s * ed * 1.5, ey - fs * 0.27); ctx.lineTo(cx + s * ed * 0.5, ey - fs * 0.3); }
+    ctx.stroke();
+  }
+  L(cx, ey + fs * 0.1, cx - fs * 0.06, ey + fs * 0.35, sh(o.skin, -0.35), fs * 0.06);
+  ctx.strokeStyle = o.lips ? '#a01020' : '#8a3a3a'; ctx.lineWidth = fs * (o.lips ? 0.1 : 0.07); ctx.beginPath();
+  const my = cy + fs * 0.62;
+  if (o.creepy) { ctx.arc(cx, my - fs * 0.15, fs * 0.42, 0.15, Math.PI - 0.15); }
+  else if (o.smile) ctx.arc(cx, my - fs * 0.1, fs * 0.22, 0.3, Math.PI - 0.3);
+  else if (o.sad) ctx.arc(cx, my + fs * 0.15, fs * 0.18, Math.PI + 0.4, -0.4);
+  else { ctx.moveTo(cx - fs * 0.2, my); ctx.lineTo(cx + fs * 0.2, my); }
+  ctx.stroke();
+  if (o.beard) { ctx.fillStyle = 'rgba(20,14,10,0.7)'; ctx.beginPath(); ctx.ellipse(cx, my - fs * 0.05, fs * 0.35, fs * 0.1, 0, 0, 7); ctx.fill(); }
+  ctx.fillStyle = vg(y, h, 'rgba(0,0,0,0)', 'rgba(0,0,0,0.25)'); ctx.fillRect(x, y, w, h);
+}
+function drawObj(o) { const f = DRAW[o.t]; if (f) f(o.x * T, o.y * T, o.w * T, o.h * T, o); }
+
+// =========================================================
+// 그리기: 인물
+// =========================================================
+const ST_HARU = { top: '#c4561c', pants: '#2b3346', shoe: '#e0dcd4', hair: '#3a2216', hood: true, spr: 'haru' };
+const ST_JUN = { top: '#2c3e6a', pants: '#3a3a40', shoe: '#7a2a2a', hair: '#141414', hood: false, spr: 'jun' };
+
+// ---------- 스프라이트 그림 (sprites.png) ----------
+// 그림이 아직 안 불렸으면 아래의 코드 그림으로 대신 그린다.
+const SPR = new Image(); SPR.src = 'sprites.png';
+const sprOK = () => SPR.complete && SPR.naturalWidth > 0;
+// 프레임: [x, y, 너비, 높이] (가장자리 여백 4px 포함). 옆모습은 오른쪽을 보는 그림.
+const SF = {"haru_down":[[0,0,74,129],[74,0,74,128],[148,0,79,128],[227,0,79,128],[306,0,84,128]],"haru_up":[[390,0,69,115],[459,0,69,115]],"haru_side":[[528,0,69,116],[597,0,67,117]],"haru_run":[[664,0,76,114],[740,0,85,113]],"jun_down":[[825,0,79,129]],"jun_up":[[904,0,71,104]],"jun_side":[[0,129,79,129],[79,129,78,128]],"jun_lie":[[157,129,129,51]],"jack_walk":[[286,129,78,135],[364,129,74,137],[438,129,76,128],[514,129,85,118],[599,129,79,116],[678,129,81,128]],"jack_scare":[[759,129,119,161]]};
+const SPR_K = { haru: 0.37, jun: 0.37, jack: 0.7 };
+function drawFrame(f, x, y, k, flip, alpha) {
+  const [sx, sy, fw, fh] = f;
+  ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha; ctx.translate(x, y); if (flip) ctx.scale(-1, 1);
+  ctx.drawImage(SPR, sx, sy, fw, fh, -fw * k / 2, -(fh - 4) * k, fw * k, fh * k);
+  ctx.restore();
+}
+function drawSpriteHuman(x, y, dir, t, st, mov, alpha, noShadow, run) {
+  const n = st.spr, RN = !!(run && mov), side = dir === 'left' || dir === 'right';
+  const set = side ? (RN && SF[n + '_run']) || SF[n + '_side'] : SF[n + '_' + dir];
+  if (!noShadow) softShadow(x, y, 11, 4, 0.55);
+  let i = 0;
+  if (mov) { const step = Math.floor(t * (RN ? 10 : 7)); i = set.length > 2 ? 1 + step % (set.length - 1) : step % set.length; } // 첫 프레임은 서 있는 자세
+  const bob = mov ? Math.abs(Math.sin(t * (RN ? 11 : 9))) * (RN ? 1.6 : 0.8) : Math.sin(now * 2) * 0.25;
+  const f = set[i], k = SPR_K[n] * (dir === 'up' ? 121 / (f[3] - 8) : 1); // 뒷모습 그림이 작아서 앞모습 키에 맞춘다
+  drawFrame(f, x, y - bob, k, dir === 'left', alpha);
+}
+
+// run: 달리기 자세 (몸을 앞으로 숙이고, 팔을 굽혀 크게 흔들고, 무릎을 높이 든다)
+function drawHuman(x, y, dir, t, st, mov, alpha, closed, noShadow, run) {
+  if (st.spr && sprOK()) return drawSpriteHuman(x, y, dir, t, st, mov, alpha, noShadow, run);
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  const RN = !!(run && mov);
+  const ph = t * (RN ? 11 : 9), sw = mov ? Math.sin(ph) : 0;
+  const bob = mov ? (RN ? Math.abs(Math.sin(ph)) * 2.8 : Math.abs(Math.cos(ph)) * 1.1) : Math.sin(now * 2) * 0.25;
+  const side = dir === 'left' || dir === 'right', fx = dir === 'left' ? -1 : 1;
+  const crouch = RN ? 1.6 : 0;
+  const hipY = y - 15 - bob + crouch, shY = y - 28 - bob + crouch * 1.4, headY = y - 35.5 - bob + crouch * 1.6 + (RN && !side ? 0.8 : 0);
+  const ux = side && RN ? fx * 3.2 : 0, hdx = side && RN ? fx * 4.6 : 0, X = x + hdx;
+  const pantsD = sh(st.pants, -0.3), topD = sh(st.top, -0.35), topL = sh(st.top, 0.15);
+  if (!noShadow) softShadow(x, y, RN ? 9 + Math.abs(sw) * 2 : 11, 4, RN ? 0.4 + (1 - Math.abs(Math.sin(ph))) * 0.15 : 0.55);
+  // 다리
+  if (side) {
+    const amp = RN ? 8 : 4.5, lift = RN ? 6 : 1.4;
+    const legDraw = (p, col, shoe) => {
+      const s = Math.sin(p), c = Math.cos(p), up = Math.max(0, -c);
+      const fxp = x + s * amp * fx, fyp = y - 2.5 - up * lift;
+      const kx = (x + fxp) / 2 + fx * (RN ? 2 + up * 3 : 0.6), ky = (hipY + fyp) / 2 - (RN ? up * 2.5 : 0);
+      limb(x, hipY, kx, ky, 4.6, col); limb(kx, ky, fxp, fyp, 4.2, col);
+      E(fxp + fx * 1.3, fyp + 0.8, 3, 1.7, shoe, RN ? -fx * up * 0.4 : 0);
+    };
+    legDraw(ph + Math.PI, pantsD, sh(st.shoe, -0.3)); legDraw(ph, st.pants, st.shoe);
+  } else {
+    const lift = RN ? 6 : 2.6, sp = RN ? 3.4 : 2.8;
+    const l1 = Math.max(0, sw) * lift, l2 = Math.max(0, -sw) * lift;
+    limb(x - sp, hipY, x - 3, y - 2.5 - l1, 4.4, st.pants); limb(x + sp, hipY, x + 3, y - 2.5 - l2, 4.4, st.pants);
+    if (RN) { if (l1 > 2) E(x - 3.2, hipY + 4.5, 2.6, 1.7, sh(st.pants, 0.12)); if (l2 > 2) E(x + 3.2, hipY + 4.5, 2.6, 1.7, sh(st.pants, 0.12)); }
+    R(x - 0.4, hipY, 0.8, 6, pantsD);
+    E(x - 3, y - 1.5 - l1, 2.7, RN && l1 > 2 ? 1.2 : 1.8, st.shoe); E(x + 3, y - 1.5 - l2, 2.7, RN && l2 > 2 ? 1.2 : 1.8, st.shoe);
+  }
+  // 뒤쪽 팔 (옆모습)
+  if (side) {
+    if (RN) { const s = -sw, ex = x + ux - s * 5 * fx, ey = shY + 8, hx2 = ex + fx * 4 - s * 1.5 * fx, hy2 = ey - 3.5; limb(x + ux - fx, shY + 3, ex, ey, 3.4, topD); limb(ex, ey, hx2, hy2, 3, topD); C(hx2, hy2, 1.6, sh(SKIN, -0.2)); }
+    else { limb(x - fx, shY + 3, x - sw * 4 * fx - fx, hipY + 2, 3.6, topD); C(x - sw * 4 * fx - fx, hipY + 3.5, 1.6, sh(SKIN, -0.2)); }
+  }
+  // 몸통 (달릴 때 앞으로 기울임)
+  ctx.save(); ctx.translate(x, hipY + 3); if (side && RN) ctx.rotate(fx * 0.22);
+  const tw = side ? 10 : 15, th = hipY - shY + 3;
+  ctx.fillStyle = hg(-tw / 2, tw, topL, topD); rrect(-tw / 2, -th, tw, th, 3.5); ctx.fill();
+  R(-tw / 2 + 1, -4, tw - 2, 2.5, sh(st.top, -0.25));
+  if (st.hood) {
+    if (dir === 'up') { ctx.fillStyle = sh(st.top, -0.12); ctx.beginPath(); ctx.ellipse(0, -th + 4 + (RN ? 1 : 0), 6, 5, 0, 0, 7); ctx.fill(); L(-4, -th + 6, 4, -th + 6, topD, 0.6); }
+    else if (dir === 'down') { ctx.fillStyle = topD; ctx.beginPath(); ctx.ellipse(0, -th + 0.5, 6.5, 2.6, 0, 0, Math.PI); ctx.fill(); const swing = RN ? sw * 1.5 : 0; L(-1.8, -th + 2, -2 + swing, -th + 7, '#e8e0d0', 0.5); L(1.8, -th + 2, 2 + swing, -th + 7, '#e8e0d0', 0.5); R(-4.5, -9, 9, 0.6, topD); }
+    else { ctx.fillStyle = topD; ctx.beginPath(); ctx.ellipse(-fx * 3, -th + 2, 3.5, 3, 0, 0, 7); ctx.fill(); }
+  } else if (dir === 'down') { L(0, -th + 1, 0, -3, sh(st.top, -0.4), 0.6); P([-3, -th, 0, -th + 4, 3, -th], '#e8e4dc'); }
+  ctx.restore();
+  // 앞쪽 팔
+  if (side) {
+    if (RN) { const s = sw, ex = x + ux - s * 5 * fx, ey = shY + 8, hx2 = ex + fx * 4 - s * 1.5 * fx, hy2 = ey - 3.5; limb(x + ux, shY + 3, ex, ey, 3.6, st.top); limb(ex, ey, hx2, hy2, 3.2, st.top); C(hx2, hy2, 1.7, SKIN); }
+    else { limb(x + fx * 0.5, shY + 3, x + sw * 4 * fx + fx, hipY + 2, 3.6, st.top); C(x + sw * 4 * fx + fx, hipY + 3.5, 1.7, SKIN); }
+  } else if (RN) {
+    for (const s of [-1, 1]) { const p = s < 0 ? sw : -sw, ex = x + s * 8.6, ey = shY + 7.5 + p * 2.5, hx2 = x + s * 5.6, hy2 = shY + 5 - p * 3.5; limb(x + s * 7, shY + 2.5, ex, ey, 3.6, s < 0 ? sh(st.top, 0.05) : sh(st.top, -0.12)); limb(ex, ey, hx2, hy2, 3.2, s < 0 ? sh(st.top, 0.05) : sh(st.top, -0.12)); C(hx2, hy2, 1.7, SKIN); }
+  } else {
+    limb(x - 7, shY + 2.5, x - 8.2, hipY + 2 + sw * 1.8, 3.6, sh(st.top, 0.05)); limb(x + 7, shY + 2.5, x + 8.2, hipY + 2 - sw * 1.8, 3.6, sh(st.top, -0.12));
+    C(x - 8.2, hipY + 3.6 + sw * 1.8, 1.7, SKIN); C(x + 8.2, hipY + 3.6 - sw * 1.8, 1.7, sh(SKIN, -0.1));
+  }
+  // 목과 머리
+  R(X - 1.7, headY + 5, 3.4, 3.5, sh(SKIN, -0.22));
+  ctx.fillStyle = rg(X, headY, 8, SKIN, sh(SKIN, -0.28), X - 2, headY - 2); ctx.beginPath(); ctx.ellipse(X, headY, 6.2, 6.8, 0, 0, 7); ctx.fill();
+  const hairG = rg(X, headY - 3, 9, sh(st.hair, 0.25), sh(st.hair, -0.3), X - 2, headY - 6);
+  const flick = RN ? Math.sin(ph * 2) * 0.8 : 0; // 달릴 때 머리카락 들썩임
+  if (dir === 'up') {
+    E(X - 6.2, headY + 1, 1.2, 1.8, sh(SKIN, -0.15)); E(X + 6.2, headY + 1, 1.2, 1.8, sh(SKIN, -0.15));
+    ctx.fillStyle = hairG; ctx.beginPath(); ctx.ellipse(X, headY - 0.5 + flick * 0.3, 6.9, 7.2, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 0.4; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(X + i * 1.5, headY - 6.5); ctx.quadraticCurveTo(X + i * 2.2, headY, X + i * 2, headY + 6 + flick); ctx.stroke(); }
+  } else if (dir === 'down') {
+    E(X - 6.1, headY + 1.2, 1.2, 1.7, sh(SKIN, -0.15)); E(X + 6.1, headY + 1.2, 1.2, 1.7, sh(SKIN, -0.15));
+    ctx.fillStyle = hairG; ctx.beginPath(); ctx.moveTo(X - 6.9, headY + 2.5); ctx.quadraticCurveTo(X - 7.6, headY - 8.2 - flick, X, headY - 7.8 - flick); ctx.quadraticCurveTo(X + 7.6, headY - 8.2 - flick, X + 6.9, headY + 2.5);
+    for (const [dx, dy] of [[5.4, -0.6], [3.8, -2.4], [2.6, -0.4], [0.8, -2.6], [-0.8, -0.6], [-2.4, -2.5], [-3.8, -0.2], [-5.4, -1.8]]) ctx.lineTo(X + dx, headY + dy - flick * 0.5);
+    ctx.closePath(); ctx.fill();
+    if (closed) { L(X - 3.4, headY + 1.6, X - 1.2, headY + 1.6, '#3a2010', 0.6); L(X + 1.2, headY + 1.6, X + 3.4, headY + 1.6, '#3a2010', 0.6); }
+    else for (const s of [-1, 1]) { E(X + s * 2.3, headY + 1.5, 1.5, 1.15, '#f8f4ee'); C(X + s * 2.2, headY + 1.6, 0.85, '#2a180c'); C(X + s * 2.0, headY + 1.3, 0.3, '#fff'); L(X + s * 1.3, headY - 0.5 - (RN ? 0.4 : 0), X + s * 3.4, headY - 0.9 + (RN ? 0.3 : 0), sh(st.hair, -0.2), 0.5); }
+    L(X, headY + 2.4, X - 0.3, headY + 3.6, sh(SKIN, -0.3), 0.5);
+    if (RN) E(X, headY + 5.6, 1.1, 0.9, '#5a2a24'); // 숨이 차서 벌린 입
+    else { ctx.strokeStyle = '#8a4a40'; ctx.lineWidth = 0.55; ctx.beginPath(); ctx.arc(X, headY + 6.2, 1.3, Math.PI + 0.5, -0.5); ctx.stroke(); }
+    E(X - 3.6, headY + 3.4, 1.2, 0.7, `rgba(230,120,110,${RN ? 0.5 : 0.25})`); E(X + 3.6, headY + 3.4, 1.2, 0.7, `rgba(230,120,110,${RN ? 0.5 : 0.25})`);
+  } else {
+    E(X - fx * 1, headY + 1.2, 1.3, 1.8, sh(SKIN, -0.15));
+    const back = RN ? 1.6 + flick : 0; // 달리면 뒷머리가 뒤로 날림
+    ctx.fillStyle = hairG; ctx.beginPath(); ctx.moveTo(X + fx * 5.5, headY - 1.5); ctx.quadraticCurveTo(X + fx * 4, headY - 8.5, X - fx * 2, headY - 7.6); ctx.quadraticCurveTo(X - fx * (8 + back), headY - 5, X - fx * (6.6 + back), headY + 4.5); ctx.lineTo(X - fx * 2.5, headY + 3.5); ctx.lineTo(X - fx * 1.5, headY - 1.5); ctx.lineTo(X + fx * 2, headY - 2.5); ctx.closePath(); ctx.fill();
+    E(X + fx * 6.2, headY + 1.5, 1, 1.2, sh(SKIN, -0.08));
+    if (closed) L(X + fx * 2.6, headY + 1.4, X + fx * 4.2, headY + 1.4, '#3a2010', 0.6);
+    else { E(X + fx * 3.6, headY + 1.3, 1.1, 1.1, '#f8f4ee'); C(X + fx * 4, headY + 1.4, 0.75, '#2a180c'); L(X + fx * 2.4, headY - 0.6, X + fx * 4.8, headY - 0.6, sh(st.hair, -0.2), 0.5); }
+    if (RN) E(X + fx * 4.4, headY + 5.4, 0.9, 0.8, '#5a2a24'); else L(X + fx * 3.4, headY + 5.6, X + fx * 4.8, headY + 5.4, '#8a4a40', 0.5);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawJack(x, y, t, alpha, scare) {
+  if (sprOK()) {
+    softShadow(x, y, 17, 5, 0.65);
+    ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
+    ctx.fillStyle = rg(x, y - 74, 30, 'rgba(255,150,40,0.22)', 'rgba(255,150,40,0)'); ctx.fillRect(x - 30, y - 104, 60, 60); // 호박 불빛
+    ctx.restore();
+    const lurch = Math.sin(t * 2.6) * 0.05 + Math.sin(now * 1.3) * 0.015;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(lurch);
+    if (scare) drawFrame(SF.jack_scare[0], 0, 0, SPR_K.jack, false, alpha);
+    else drawFrame(SF.jack_walk[Math.floor(t * 6) % SF.jack_walk.length], 0, 0, SPR_K.jack, x > S.x, alpha); // 하루 쪽을 본다
+    ctx.restore();
+    return;
+  }
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  softShadow(x, y, 17, 5, 0.65);
+  const sway = Math.sin(t * 5) * 2, lurch = Math.sin(t * 2.6) * 0.05 + Math.sin(now * 1.3) * 0.015;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(lurch);
+  // 뒤쪽 팔
+  limb(7, -54, 13, -32 - sway, 3.4, '#0a080c'); limb(13, -32 - sway, 15, -12 - sway, 2, '#4a4248');
+  // 망토
+  const g = ctx.createLinearGradient(-18, 0, 18, 0); g.addColorStop(0, '#040305'); g.addColorStop(0.4, '#1e1a22'); g.addColorStop(0.6, '#16121a'); g.addColorStop(1, '#030204');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-9, -58); ctx.quadraticCurveTo(-14, -30, -18, -3);
+  for (let i = 0; i <= 12; i++) { const hxp = -18 + i * 3, hy = (i % 2 ? -6 - hash(i, 3) * 5 : -1) + Math.sin(t * 7 + i) * 1.2; ctx.lineTo(hxp, hy); }
+  ctx.quadraticCurveTo(14, -30, 9, -58); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 1; for (const fxp of [-8, -3, 3, 8]) { ctx.beginPath(); ctx.moveTo(fxp * 0.6, -52); ctx.quadraticCurveTo(fxp * 1.1 + sway * 0.3, -28, fxp * 1.5, -5); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; for (const fxp of [-6, 1, 6]) { ctx.beginPath(); ctx.moveTo(fxp * 0.6, -50); ctx.quadraticCurveTo(fxp * 1.1, -28, fxp * 1.4, -8); ctx.stroke(); }
+  // 목깃
+  ctx.fillStyle = '#0c0a0e'; ctx.beginPath(); ctx.moveTo(-11, -58); for (let i = 0; i <= 8; i++) ctx.lineTo(-11 + i * 2.75, -54 + (i % 2) * 4); ctx.lineTo(9, -62); ctx.lineTo(-9, -62); ctx.fill();
+  // 앞쪽 팔과 손
+  limb(-8, -55, -14, -32 + sway, 3.6, '#0e0c10'); limb(-14, -32 + sway, -16, -12 + sway, 2.1, '#5a5258');
+  const hxp = -16, hyp = -12 + sway;
+  ctx.strokeStyle = '#cfc6b8'; ctx.lineWidth = 0.8; ctx.lineCap = 'round';
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(hxp, hyp); ctx.quadraticCurveTo(hxp - 2 + i * 1.2, hyp + 4, hxp - 3 + i * 1.6, hyp + 7 + (i === 1 || i === 2 ? 1 : 0)); ctx.stroke(); }
+  ctx.strokeStyle = '#a89e90'; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(15, -12 - sway); ctx.lineTo(14 + i * 1.5, -5 - sway); ctx.stroke(); }
+  ctx.lineCap = 'butt';
+  // 호박 머리
+  const hy = -70;
+  ctx.fillStyle = rg(0, hy + 4, 30, 'rgba(255,150,40,0.22)', 'rgba(255,150,40,0)'); ctx.fillRect(-30, hy - 26, 60, 60);
+  pumpkinBody(0, hy, 16, 13, true);
+  for (let i = 0; i < 3; i++) E((i - 1) * 9 + hash(i, 7) * 3, hy - 10 + hash(7, i) * 2, 1.2, 0.8, 'rgba(40,50,20,0.3)');
+  stem(0, hy - 12.5, 1.2);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+function drawGhost(x, y, alpha) {
+  ctx.globalAlpha = clamp(alpha * (0.85 + 0.15 * Math.sin(now * 3)), 0, 1); const fy = y - 4 + Math.sin(now * 2) * 2;
+  ctx.fillStyle = rg(x, fy - 22, 30, 'rgba(190,215,255,0.25)', 'rgba(190,215,255,0)'); ctx.fillRect(x - 30, fy - 52, 60, 60);
+  const g = ctx.createLinearGradient(0, fy - 26, 0, fy + 2); g.addColorStop(0, 'rgba(245,248,255,0.95)'); g.addColorStop(1, 'rgba(220,230,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - 5, fy - 26); ctx.quadraticCurveTo(x - 11, fy - 10, x - 12, fy + 2); ctx.lineTo(x + 12, fy + 2); ctx.quadraticCurveTo(x + 11, fy - 10, x + 5, fy - 26); ctx.fill();
+  limb(x - 5, fy - 24, x - 7, fy - 13, 2.2, 'rgba(240,236,236,0.9)'); limb(x + 5, fy - 24, x + 7, fy - 13, 2.2, 'rgba(240,236,236,0.9)');
+  ctx.fillStyle = '#120c10'; ctx.beginPath(); ctx.moveTo(x - 7, fy - 30); ctx.quadraticCurveTo(x - 9, fy - 16, x - 7, fy - 12); ctx.lineTo(x + 7, fy - 12); ctx.quadraticCurveTo(x + 9, fy - 16, x + 7, fy - 30); ctx.fill();
+  ctx.fillStyle = rg(x, fy - 32, 7, '#fbf6f4', '#c8c0c4', x - 1.5, fy - 34); ctx.beginPath(); ctx.ellipse(x, fy - 32, 5.6, 6.2, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#120c10'; ctx.beginPath(); ctx.ellipse(x, fy - 36, 6.6, 4.4, 0, Math.PI * 0.95, Math.PI * 2.05); ctx.fill();
+  C(x - 2.2, fy - 31.5, 0.9, '#2a2030'); C(x + 2.2, fy - 31.5, 0.9, '#2a2030');
+  ctx.strokeStyle = '#c07070'; ctx.lineWidth = 0.6; ctx.beginPath(); ctx.arc(x, fy - 29.5, 1.5, 0.3, Math.PI - 0.3); ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+function drawActor(a) {
+  if (a.kind === 'jun') drawHuman(a.x, a.y, a.dir || 'up', a.walk || 0, ST_JUN, a.moving, a.alpha);
+  else if (a.kind === 'jack') drawJack(a.x, a.y, a.walk || 0, a.alpha);
+  else if (a.kind === 'ghost') drawGhost(a.x, a.y, a.alpha);
+}
+
+// =========================================================
+// 그리기: 어둠 · 빛 · 화면 효과
+// =========================================================
+const dk = document.createElement('canvas'); dk.width = W * SC; dk.height = H * SC; const dc = dk.getContext('2d');
+const DIRA = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+function holeGrad(x, y, r, a) {
+  const g = dc.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(0.35, `rgba(0,0,0,${a * 0.85})`); g.addColorStop(0.7, `rgba(0,0,0,${a * 0.35})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+  return g;
+}
+function drawDark() {
+  const m = MAPS[S.map];
+  dc.setTransform(1, 0, 0, 1, 0, 0); dc.globalCompositeOperation = 'source-over'; dc.clearRect(0, 0, dk.width, dk.height);
+  dc.setTransform(SC, 0, 0, SC, 0, 0);
+  const da = clamp(m.dark * 0.9 - lightT * 1.6, 0.25, 1); // 0.9: 맵을 조금 더 밝게
+  dc.fillStyle = `rgba(3,2,6,${da})`; dc.fillRect(0, 0, W, H);
+  dc.globalCompositeOperation = 'destination-out';
+  const fl = Math.sin(now * 9) * 3 + Math.sin(now * 23) * 2, lights = [];
+  const px = S.x, py = S.y - 14;
+  if (S.hidden) lights.push([px, py, 36, 0]);
+  else {
+    lights.push([px, py, 62 + fl * 0.5, 0]);
+    const a = DIRA[S.dir], len = 230;
+    for (const [spread, al] of [[0.62, 0.35], [0.45, 0.55], [0.28, 0.6]]) {
+      dc.fillStyle = holeGrad(px, py, len, al); dc.beginPath(); dc.moveTo(px, py); dc.arc(px, py, len, a - spread, a + spread); dc.closePath(); dc.fill();
+    }
+  }
+  for (const o of m.objs) if (vis(o) && o.light && (!o.lightIf || F[o.lightIf]) && (!o.lit || F[o.lit])) lights.push([(o.x + o.w / 2) * T, (o.y + (o.ly != null ? o.ly : 0.3)) * T, o.light + fl, o.cool ? 2 : 1]);
+  if (M.active) lights.push([M.x, M.y - 70, 75 + fl, 1]);
+  for (const a of actors) if (a.light && a.alpha > 0.05) lights.push([a.x, a.y - (a.kind === 'jack' ? 70 : 30), a.light * a.alpha, a.kind === 'ghost' ? 2 : 1]);
+  for (const [x, y, r] of lights) { dc.fillStyle = holeGrad(x, y, r, 1); dc.fillRect(x - r, y - r, r * 2, r * 2); }
+  ctx.drawImage(dk, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const [x, y, r, kind] of lights) {
+    if (!kind) continue;
+    const c = kind === 2 ? '120,150,255' : '255,140,40';
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r * 0.85); g.addColorStop(0, `rgba(${c},${kind === 2 ? 0.08 : 0.14})`); g.addColorStop(1, `rgba(${c},0)`);
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  if (!S.hidden) {
+    const a = DIRA[S.dir]; const g = ctx.createRadialGradient(px, py, 0, px, py, 200); g.addColorStop(0, 'rgba(255,240,210,0.07)'); g.addColorStop(1, 'rgba(255,240,210,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, 200, a - 0.4, a + 0.4); ctx.closePath(); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+const DUST = Array.from({ length: 50 }, () => ({ x: Math.random() * W, y: Math.random() * H, vx: rnd(-3, 3), vy: rnd(-2, 3), r: rnd(0.3, 0.9), p: Math.random() * 6 }));
+function drawDust(dt) {
+  for (const d of DUST) {
+    d.x += (d.vx + Math.sin(now * 0.5 + d.p) * 2) * dt; d.y += d.vy * dt;
+    if (d.x < 0) d.x += W; if (d.x > W) d.x -= W; if (d.y < 0) d.y += H; if (d.y > H) d.y -= H;
+    C(d.x, d.y, d.r, `rgba(255,240,220,${0.25 + 0.2 * Math.sin(now * 2 + d.p)})`);
+  }
+}
+const GRAIN = [];
+function makeGrain() {
+  for (let k = 0; k < 4; k++) {
+    const c = document.createElement('canvas'); c.width = 320; c.height = 240; const g = c.getContext('2d');
+    const id = g.createImageData(320, 240); if (!id || !id.data) return;
+    for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = Math.random() * 70; }
+    g.putImageData(id, 0, 0); GRAIN.push(c);
+  }
+}
+makeGrain();
+let VIG = null;
+function postFX(strength) {
+  if (GRAIN.length) { ctx.globalAlpha = 0.16 * (strength || 1); ctx.drawImage(GRAIN[((now * 20) | 0) % GRAIN.length], 0, 0, W, H); ctx.globalAlpha = 1; }
+  if (!VIG) { VIG = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85); VIG.addColorStop(0, 'rgba(0,0,0,0)'); VIG.addColorStop(1, 'rgba(0,0,0,0.6)'); }
+  ctx.fillStyle = VIG; ctx.fillRect(0, 0, W, H);
+}
+
+// =========================================================
+// 그리기: 화면 위 글씨들
+// =========================================================
+function wrap(text, maxW) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    let line = '';
+    for (const ch of para) { if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ch === ' ' ? '' : ch; } else line += ch; }
+    out.push(line);
+  }
+  return out;
+}
+function panel(x, y, w, h, a) {
+  ctx.fillStyle = vg(y, h, `rgba(22,12,18,${a || 0.9})`, `rgba(8,4,8,${a || 0.9})`); ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#7a4a2a'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5);
+  ctx.strokeStyle = 'rgba(255,180,90,0.18)'; ctx.lineWidth = 0.6; ctx.strokeRect(x + 4, y + 4, w - 8, h - 8);
+  for (const [cx2, cy2] of [[x + 4, y + 4], [x + w - 4, y + 4], [x + 4, y + h - 4], [x + w - 4, y + h - 4]]) C(cx2, cy2, 1.2, '#a07040');
+}
+function txt(s, x, y, size, color, align, bold) { ctx.font = `${bold ? 'bold ' : ''}${size}px ${FONT}`; ctx.textAlign = align || 'left'; ctx.fillStyle = 'rgba(0,0,0,.75)'; ctx.fillText(s, x + 1, y + 1); ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left'; }
+function drawHUD() {
+  const m = MAPS[S.map], ob = objective();
+  ctx.globalAlpha = S.y < 4.2 * T ? 0.28 : 1; // 위쪽 벽을 볼 때는 흐리게
+  ctx.font = `13px ${FONT}`; const w = Math.max(120, ctx.measureText('목표: ' + ob).width + 24);
+  panel(8, 8, w, ob ? 46 : 28, 0.72); txt(m.name, 18, 26, 15, '#f0d8b0', 'left', true);
+  if (ob) txt('목표: ' + ob, 18, 45, 13, '#e8a860');
+  const inv = S.inv.length ? S.inv.join(' · ') : '없음';
+  ctx.font = `13px ${FONT}`; const iw = Math.max(110, ctx.measureText('소지품: ' + inv).width + 24);
+  panel(W - iw - 8, 8, iw, 46, 0.72);
+  txt(`일기 ${S.pages}/5`, W - iw + 4, 26, 14, '#f0e0c0', 'left', true); txt('소지품: ' + inv, W - iw + 4, 45, 13, '#c8b8a0');
+  ctx.globalAlpha = 1;
+  if (toastMsg) { const a = Math.min(1, toastMsg.t); ctx.globalAlpha = a; ctx.font = `15px ${FONT}`; const tw = ctx.measureText(toastMsg.text).width + 30; panel(W / 2 - tw / 2, 66, tw, 30, 0.88); txt(toastMsg.text, W / 2, 86, 15, '#ffd8a0', 'center'); ctx.globalAlpha = 1; }
+}
+function drawDialog() {
+  const Ln = dialog.lines[dialog.i], shown = Ln.text.slice(0, Math.floor(dialog.c)), done = dialog.c >= Ln.text.length;
+  const blink = Math.sin(now * 6) > 0;
+  if (Ln.note) {
+    R(0, 0, W, H, 'rgba(0,0,0,.65)'); const x = 100, y = 30, w = 440, h = 420;
+    softShadow(W / 2, y + h, w / 2, 14, 0.6);
+    ctx.fillStyle = rg(W / 2, y + h / 2, 300, '#ece2c8', '#b8a882'); ctx.fillRect(x, y, w, h);
+    for (let i = 0; i < 40; i++) { ctx.fillStyle = `rgba(120,80,40,${0.03 + hash(i, 1) * 0.05})`; ctx.beginPath(); ctx.arc(x + hash(i, 2) * w, y + hash(2, i) * h, 4 + hash(i, 3) * 18, 0, 7); ctx.fill(); }
+    P([x + w - 30, y, x + w, y, x + w, y + 30], '#9a8a6a');
+    for (let i = 0; i < 14; i++) R(x + 20, y + 79 + i * 24, w - 40, 0.6, 'rgba(90,60,30,.2)');
+    R(x + 46, y + 10, 0.8, h - 20, 'rgba(160,60,60,0.25)');
+    txt(Ln.note, W / 2, y + 44, 20, '#6a1a10', 'center', true);
+    ctx.font = `25px ${NFONT}`; ctx.fillStyle = '#2a1a10';
+    wrap(Ln.text, w - 80).forEach((s, i) => ctx.fillText(s, x + 56, y + 96 + i * 24));
+    if (blink) txt('Space ▶', x + w - 20, y + h - 14, 13, '#8a5a3a', 'right');
+  } else if (Ln.narr) {
+    ctx.font = `19px ${FONT}`; const ls = wrap(shown, 560);
+    ls.forEach((s, i) => txt(s, W / 2, H / 2 - (ls.length - 1) * 15 + i * 30, 19, '#e0d8d0', 'center'));
+    if (done && blink) txt('▼', W / 2, H - 40, 14, '#a08070', 'center');
+  } else {
+    const x = 16, y = H - 124, w = W - 32, h = 108; panel(x, y, w, h);
+    if (Ln.who) { ctx.font = `bold 15px ${FONT}`; const nw = ctx.measureText(Ln.who).width + 24; panel(x + 10, y - 26, nw, 28, 0.95); txt(Ln.who, x + 22, y - 7, 15, Ln.who === '하루' ? '#ffb070' : Ln.who === '준' ? '#90b8ff' : (Ln.who === '소연' || Ln.who === '소녀') ? '#d8e4ff' : '#ff7070', 'left', true); }
+    ctx.font = `17px ${FONT}`; wrap(shown, w - 40).slice(0, 3).forEach((s, i) => txt(s, x + 20, y + 34 + i * 27, 17, '#f0e8e0'));
+    if (done && blink) txt('▼', x + w - 22, y + h - 12, 14, '#c89060', 'center');
+  }
+}
+function drawChoice() {
+  const x = 16, y = H - 124, w = W - 32, h = 108; panel(x, y, w, h); txt(choice.q, x + 20, y + 34, 17, '#f0e8e0');
+  const bw = 170, bh = 34 * choice.opts.length + 14, bx = W - bw - 24, by = y - bh - 8; panel(bx, by, bw, bh);
+  choice.opts.forEach((o, i) => { const sel = i === choice.i; if (sel) R(bx + 8, by + 8 + i * 34, bw - 16, 30, 'rgba(255,140,60,.18)'); txt((sel ? '▶ ' : '   ') + o, bx + 18, by + 29 + i * 34, 16, sel ? '#ffc080' : '#b8a898'); });
+}
+function drawLock() {
+  R(0, 0, W, H, 'rgba(0,0,0,.6)'); const x = W / 2 - 160, y = 140, w = 320, h = 200; panel(x, y, w, h, 0.95);
+  txt('금고 다이얼', W / 2, y + 36, 18, '#f0d8b0', 'center', true);
+  for (let i = 0; i < 4; i++) {
+    const bx = x + 40 + i * 64, sel = i === lock.i;
+    ctx.fillStyle = vg(y + 60, 64, sel ? '#4a3a2a' : '#2a2018', sel ? '#1a1208' : '#0a0806'); ctx.fillRect(bx, y + 60, 48, 64);
+    ctx.strokeStyle = sel ? '#ffb060' : '#5a4a3a'; ctx.lineWidth = 2; ctx.strokeRect(bx + 1, y + 61, 46, 62);
+    txt(String(lock.d[i]), bx + 24, y + 104, 30, sel ? '#ffd8a0' : '#c8b8a0', 'center', true);
+    if (sel) { txt('▲', bx + 24, y + 56, 12, '#ffb060', 'center'); txt('▼', bx + 24, y + 140, 12, '#ffb060', 'center'); }
+  }
+  txt('←→ 자리 · ↑↓ 숫자(숫자키도 됨) · Enter 확인 · X 취소', W / 2, y + h - 22, 12, '#a89888', 'center');
+}
+
+// ---- 갑툭튀 그림 ----
+function glowHole(pts, gx, gy, r) {
+  P(pts.map((v, i) => i % 2 ? v + 12 : v), '#0a0200');
+  ctx.save(); ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]); ctx.closePath(); ctx.clip();
+  const fl = 0.85 + 0.15 * Math.random(), g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+  g.addColorStop(0, `rgba(255,250,${(200 * fl) | 0},1)`); g.addColorStop(0.45, `rgba(255,${(150 * fl) | 0},20,1)`); g.addColorStop(1, '#3a0800');
+  ctx.fillStyle = g; ctx.fillRect(gx - r * 2, gy - r * 2, r * 4, r * 4); ctx.restore();
+}
+function scareJack() {
+  ctx.fillStyle = rg(0, 0, 420, 'rgba(255,90,0,0.3)', 'rgba(0,0,0,0)'); ctx.fillRect(-420, -320, 840, 640);
+  pumpkinBody(0, 20, 270, 225, null);
+  ctx.fillStyle = rg(0, 30, 290, 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.8)'); ctx.beginPath(); ctx.ellipse(0, 20, 272, 228, 0, 0, 7); ctx.fill();
+  stem(0, -195, 18);
+  glowHole([-205, -5, -40, -15, -95, -150, -120, -95], -115, -55, 120);
+  glowHole([40, -15, 205, -5, 120, -95, 95, -150], 115, -55, 120);
+  E(-110, -55, 7, 26, '#140000'); E(110, -55, 7, 26, '#140000'); C(-110, -55, 3, '#ff2010'); C(110, -55, 3, '#ff2010');
+  const mouth = [-225, 45, -170, 80, -140, 55, -95, 95, -60, 60, -20, 100, 20, 60, 60, 100, 95, 60, 140, 95, 170, 55, 225, 45, 190, 160, 140, 200, 120, 160, 80, 215, 40, 170, 0, 225, -40, 170, -80, 215, -120, 160, -140, 200, -190, 160];
+  glowHole(mouth, 0, 130, 230);
+  ctx.strokeStyle = 'rgba(30,6,0,0.75)'; ctx.lineCap = 'round';
+  for (let i = 0; i < 7; i++) { ctx.lineWidth = 4 + hash(i, 2) * 5; const dx = -170 + i * 55; ctx.beginPath(); ctx.moveTo(dx, 190 + hash(i, 1) * 20); ctx.lineTo(dx + 2, 230 + hash(i, 3) * 70); ctx.stroke(); }
+  ctx.lineCap = 'butt';
+}
+function scarePortrait() {
+  ctx.fillStyle = hg(-290, 580, '#e0b860', '#6a4a14'); ctx.fillRect(-290, -240, 580, 480);
+  R(-262, -212, 524, 424, '#3a2a10'); ctx.fillStyle = rg(0, 0, 320, '#3a2418', '#0a0604'); ctx.fillRect(-250, -200, 500, 400);
+  ctx.fillStyle = rg(0, 20, 220, '#a89482', '#3a3028', -40, -40); ctx.beginPath(); ctx.ellipse(0, 20, 165, 205, 0, 0, 7); ctx.fill();
+  R(-175, -200, 350, 75, '#100806');
+  for (const s of [-1, 1]) { ctx.fillStyle = rg(s * 65, -30, 50, '#000', 'rgba(0,0,0,0)'); ctx.fillRect(s * 65 - 50, -80, 100, 100); C(s * 65, -30, 30, '#000'); C(s * 65, -30, 12, '#ff2010'); C(s * 65, -30, 24, 'rgba(255,30,10,0.25)'); }
+  ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(-85, 55); ctx.quadraticCurveTo(0, 40, 85, 55); ctx.lineTo(55, 215); ctx.quadraticCurveTo(0, 240, -55, 215); ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 8; i++) P([-74 + i * 20, 52 + Math.abs(i - 3.5) * 2, -61 + i * 20, 52 + Math.abs(i - 3.5) * 2, -67 + i * 20, 80], '#d8d0b8');
+  for (let i = 0; i < 6; i++) P([-50 + i * 20, 212, -38 + i * 20, 212, -44 + i * 20, 188], '#c8c0a8');
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-210, -200); ctx.lineTo(-130, -70); ctx.lineTo(-160, 40); ctx.lineTo(-120, 120); ctx.moveTo(220, -120); ctx.lineTo(150, 10); ctx.lineTo(190, 90); ctx.stroke();
+}
+// 공통: 창백한 귀신 얼굴
+function ghostHead(o) {
+  o = o || {};
+  ctx.fillStyle = '#030303'; ctx.beginPath(); ctx.ellipse(0, 10, 250, 300, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = rg(0, 10, 250, o.skin || '#e4e0d6', '#4a4a44', -40, -70); ctx.beginPath(); ctx.ellipse(0, 25, 165, 220, 0, 0, 7); ctx.fill();
+  for (const s of [-1, 1]) { ctx.fillStyle = rg(s * 92, 105, 70, 'rgba(50,50,50,0.5)', 'rgba(50,50,50,0)'); ctx.fillRect(s * 92 - 70, 35, 140, 140); }
+  ctx.strokeStyle = 'rgba(70,60,110,0.35)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 9; i++) { ctx.beginPath(); ctx.moveTo(-120 + hash(i, 1) * 240, -150 + hash(1, i) * 80); ctx.quadraticCurveTo(-110 + hash(i, 2) * 220, -60, -100 + hash(i, 3) * 200, 20); ctx.stroke(); }
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = rg(s * 68, -40, 72, 'rgba(0,0,0,1)', 'rgba(20,10,10,0)'); ctx.fillRect(s * 68 - 75, -115, 150, 150);
+    if (o.eyes === 'white') { E(s * 68, -38, 40, 32, '#e8e4dc'); C(s * 68, -36, 7, '#000'); }
+    else if (o.eyes === 'red') { E(s * 68, -38, 42, 34, '#000'); C(s * 68, -36, 9, '#ff1a0a'); C(s * 68, -36, 22, 'rgba(255,20,10,0.25)'); }
+    else { E(s * 68, -40, 44, 36, '#000'); C(s * 68, -36, 6, '#f8f8f0'); C(s * 68, -36, 2.5, '#000'); }
+    if (o.blood !== false) { ctx.fillStyle = vg(-10, 180, 'rgba(90,0,0,0.9)', 'rgba(60,0,0,0)'); ctx.fillRect(s * 68 - 10, -10, 7, 180); ctx.fillRect(s * 68 + 14, -14, 5, 120); }
+  }
+  if (o.mouth === 'grin') {
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(-150, 60); ctx.quadraticCurveTo(0, 230, 150, 60); ctx.quadraticCurveTo(0, 150, -150, 60); ctx.fill();
+    for (let i = 0; i < 14; i++) { const tx = -130 + i * 20, ty = 70 + Math.sin((i / 13) * Math.PI) * 55; P([tx, ty, tx + 14, ty, tx + 7, ty + 16], '#e0d8c4'); }
+    ctx.strokeStyle = o.lips || '#8a0010'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-150, 60); ctx.quadraticCurveTo(0, 230, 150, 60); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(0, 130, 58, 95, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = rg(0, 160, 60, '#4a0000', '#000'); ctx.beginPath(); ctx.ellipse(0, 150, 38, 66, 0, 0, 7); ctx.fill();
+    for (let i = 0; i < 6; i++) P([-45 + i * 18, 52 + Math.abs(i - 2.5) * 4, -36 + i * 18, 52 + Math.abs(i - 2.5) * 4, -40 + i * 18, 70], '#cfc6b0');
+  }
+  ctx.fillStyle = '#030303'; ctx.beginPath(); ctx.ellipse(0, -175, 180, 82, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#020202'; ctx.lineCap = 'round';
+  const len = o.hairLen || 0;
+  for (let i = 0; i < 22; i++) {
+    const side = i < 11 ? -1 : 1, k = i % 11, sx = side * (100 + k * 9);
+    ctx.lineWidth = 4 + hash(i, 1) * 6; ctx.beginPath(); ctx.moveTo(sx * 0.6, -220);
+    ctx.bezierCurveTo(sx * 0.95, -110, sx * (1.0 + hash(i, 2) * 0.15) + Math.sin(now * 3 + i) * 5, 60, sx * (0.95 + hash(i, 3) * 0.3), 210 + hash(i, 4) * 100 + len); ctx.stroke();
+  }
+  if (!o.noFringe) for (let i = 0; i < 5; i++) {
+    const sx = -64 + i * 32 + hash(i, 9) * 10; ctx.lineWidth = 2.5 + hash(i, 8) * 2.5; ctx.beginPath(); ctx.moveTo(sx * 0.5, -200);
+    ctx.bezierCurveTo(sx * 0.8, -140, sx + Math.sin(now * 2 + i) * 4, -70, sx * 1.1 + (i % 2 ? 12 : -12), -20 + hash(i, 7) * 110); ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+function scareFace() { ghostHead(); }
+function scareHang() { // 천장에 거꾸로 매달린 얼굴
+  ctx.fillStyle = rg(0, 60, 380, 'rgba(120,130,160,0.35)', 'rgba(0,0,0,0)'); ctx.fillRect(-420, -320, 840, 640);
+  ctx.save(); ctx.translate(0, -40); ctx.rotate(Math.PI + 0.12); ghostHead({ eyes: 'white', mouth: 'grin', blood: false, hairLen: -120, noFringe: true });
+  // 거꾸로 매달렸으니 머리카락은 바닥(화면 아래)으로 늘어진다
+  ctx.strokeStyle = '#020202'; ctx.lineCap = 'round';
+  for (let i = 0; i < 30; i++) { const sx = -170 + i * 11.7, sway = Math.sin(now * 2 + i) * 8; ctx.lineWidth = 4 + hash(i, 5) * 6; ctx.beginPath(); ctx.moveTo(sx * 0.8, -190); ctx.bezierCurveTo(sx * 0.9, -280, sx + sway, -380, sx * 1.1 + sway * 2, -480 - hash(i, 6) * 80); ctx.stroke(); }
+  ctx.lineCap = 'butt'; ctx.restore();
+  ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 9; L(-20, -330, -10, -230, '#3a2a1a', 9);
+}
+function scareLady() { // 붉은 옷의 여인
+  ctx.fillStyle = rg(0, 330, 300, '#c01424', '#3a0006', -60, 260); ctx.beginPath(); ctx.ellipse(0, 360, 300, 170, 0, 0, 7); ctx.fill();
+  ctx.save(); ctx.rotate(-0.18); ghostHead({ skin: '#efe6e0', eyes: 'red', mouth: 'grin', lips: '#d01020', blood: false }); ctx.restore();
+}
+function scareCrawl() { // 바닥을 기어 오는 귀신과 뻗은 팔
+  ctx.save(); ctx.translate(0, 150); ctx.rotate(0.35); ctx.scale(0.85, 0.85); ghostHead({ eyes: 'red' }); ctx.restore();
+  for (const s of [-1, 1]) {
+    ctx.strokeStyle = '#cfc8bc'; ctx.lineCap = 'round'; ctx.lineWidth = 46;
+    ctx.beginPath(); ctx.moveTo(s * 360, 330); ctx.quadraticCurveTo(s * 300, 150, s * 190, 60); ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(80,70,120,0.4)'; ctx.beginPath(); ctx.moveTo(s * 330, 300); ctx.quadraticCurveTo(s * 280, 160, s * 200, 80); ctx.stroke();
+    ctx.strokeStyle = '#d8d0c4';
+    for (let f = 0; f < 4; f++) { ctx.lineWidth = 11 - f; ctx.beginPath(); ctx.moveTo(s * 190, 60); ctx.quadraticCurveTo(s * (160 - f * 10), 20 - f * 6, s * (110 - f * 22), -10 + f * 22); ctx.stroke(); C(s * (110 - f * 22), -10 + f * 22, 6, '#3a2a20'); }
+    ctx.lineCap = 'butt';
+  }
+}
+function scareDoll() { // 금 간 도자기 인형
+  for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; C(Math.cos(a) * 205, -10 + Math.sin(a) * 235, 52, i % 2 ? '#5a2a10' : '#4a200a'); }
+  ctx.fillStyle = rg(0, 0, 240, '#fbf2e6', '#a89880', -60, -80); ctx.beginPath(); ctx.ellipse(0, 10, 190, 222, 0, 0, 7); ctx.fill();
+  E(-110, 85, 42, 26, 'rgba(230,110,120,0.4)'); E(110, 85, 42, 26, 'rgba(230,110,120,0.4)');
+  E(-75, -20, 54, 42, '#fff'); C(-75, -18, 32, rg(-75, -18, 32, '#8ac0f0', '#14305a')); C(-75, -18, 9, '#000'); C(-87, -30, 7, '#fff');
+  ctx.strokeStyle = '#1a1010'; ctx.lineWidth = 3; for (let i = 0; i < 7; i++) { const a = Math.PI + 0.3 + i * 0.4; ctx.beginPath(); ctx.moveTo(-75 + Math.cos(a) * 52, -20 + Math.sin(a) * 40); ctx.lineTo(-75 + Math.cos(a) * 70, -20 + Math.sin(a) * 58); ctx.stroke(); }
+  ctx.fillStyle = rg(80, -20, 52, '#000', '#2a1a10'); ctx.beginPath(); ctx.ellipse(80, -20, 50, 40, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = vg(10, 170, 'rgba(10,0,0,0.95)', 'rgba(10,0,0,0)'); ctx.fillRect(70, 10, 12, 170);
+  L(85, 15, 105, 125, '#c8c0b0', 2); C(105, 140, 22, '#2a2a2e'); for (const [bx, by] of [[-6, -6], [6, -6], [-6, 6], [6, 6]]) C(105 + bx, 140 + by, 3, '#000');
+  ctx.strokeStyle = '#140a06'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(30, -225); ctx.lineTo(18, -150); ctx.lineTo(45, -100); ctx.lineTo(25, -55); ctx.moveTo(18, -150); ctx.lineTo(-30, -120); ctx.moveTo(-40, 40); ctx.lineTo(-10, 110); ctx.lineTo(-35, 170); ctx.lineTo(-20, 230); ctx.stroke();
+  ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(0, 120, 34, 22, 0, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#b01020'; ctx.lineWidth = 9; ctx.beginPath(); ctx.ellipse(0, 120, 36, 24, 0, 0, 7); ctx.stroke();
+  for (let i = 0; i < 4; i++) P([-22 + i * 13, 102, -12 + i * 13, 102, -17 + i * 13, 116], '#e8e0d0');
+}
+function scareEye() { // 문틈으로 들여다보는 거대한 눈
+  R(-400, -300, 800, 600, '#000');
+  ctx.save(); ctx.beginPath(); ctx.moveTo(-420, 0); ctx.quadraticCurveTo(0, -200, 420, 0); ctx.quadraticCurveTo(0, 200, -420, 0); ctx.clip();
+  ctx.fillStyle = rg(0, 0, 420, '#f4ece0', '#a88a7a'); ctx.fillRect(-420, -200, 840, 400);
+  ctx.strokeStyle = 'rgba(180,10,10,0.7)'; ctx.lineCap = 'round';
+  for (let i = 0; i < 26; i++) { const a = hash(i, 1) * Math.PI * 2, r0 = 420; ctx.lineWidth = 1 + hash(i, 2) * 3; ctx.beginPath(); let px2 = Math.cos(a) * r0, py2 = Math.sin(a) * r0 * 0.5; ctx.moveTo(px2, py2); for (let k = 0; k < 5; k++) { px2 *= 0.78; py2 *= 0.78; ctx.lineTo(px2 + (hash(i, k) - 0.5) * 30, py2 + (hash(k, i) - 0.5) * 20); } ctx.stroke(); }
+  const pr = 60 + Math.sin(now * 40) * 4;
+  C(0, 0, 150, rg(0, 0, 150, '#d8a030', '#4a2a08')); for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2; L(Math.cos(a) * pr, Math.sin(a) * pr, Math.cos(a) * 145, Math.sin(a) * 145, 'rgba(60,30,0,0.4)', 2); }
+  C(0, 0, pr, '#000'); C(-50, -50, 22, 'rgba(255,255,255,0.85)');
+  ctx.fillStyle = vg(-200, 120, 'rgba(60,20,10,0.8)', 'rgba(60,20,10,0)'); ctx.fillRect(-420, -200, 840, 120);
+  ctx.restore(); ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#2a1008'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(-420, 0); ctx.quadraticCurveTo(0, -200, 420, 0); ctx.stroke();
+  for (let i = 0; i < 18; i++) { const tx = -340 + i * 40, ty = -Math.sin((tx + 420) / 840 * Math.PI) * 100 * 0.98 - 2; L(tx, ty, tx - 6, ty - 30, '#0a0402', 3); }
+}
+function scareHands() { // 유리창을 두드리는 피 묻은 손들
+  ctx.fillStyle = vg(-300, 600, '#0a1226', '#1e2e50'); ctx.fillRect(-400, -300, 800, 600);
+  const hand = (hx, hy, s, rot) => {
+    ctx.save(); ctx.translate(hx, hy); ctx.rotate(rot); ctx.scale(s, s);
+    ctx.fillStyle = 'rgba(120,0,6,0.85)'; ctx.beginPath(); ctx.ellipse(0, 20, 34, 40, 0, 0, 7); ctx.fill();
+    for (let f = 0; f < 4; f++) { ctx.beginPath(); ctx.ellipse(-24 + f * 16, -38 - (f === 1 || f === 2 ? 8 : 0), 7, 26, (f - 1.5) * 0.12, 0, 7); ctx.fill(); }
+    ctx.beginPath(); ctx.ellipse(40, 10, 8, 20, -0.9, 0, 7); ctx.fill();
+    for (let d = 0; d < 3; d++) { ctx.fillStyle = vg(50, 90, 'rgba(110,0,6,0.8)', 'rgba(110,0,6,0)'); ctx.fillRect(-20 + d * 18, 50, 5, 70 + hash(d, hx | 0) * 60); }
+    ctx.restore();
+  };
+  for (let i = 0; i < 14; i++) hand(-330 + hash(i, 1) * 660, -230 + hash(1, i) * 440, 1 + hash(i, 3) * 1.3, (hash(i, 4) - 0.5) * 0.8);
+  C(-30, -10, 120, 'rgba(230,230,230,0.12)'); ghostHeadMini();
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.moveTo(-400, 300); ctx.lineTo(-100, -300); ctx.lineTo(0, -300); ctx.lineTo(-300, 300); ctx.fill();
+  box(-400, -12, 800, 24, '#2a1a10'); box(-12, -300, 24, 600, '#2a1a10');
+}
+function ghostHeadMini() { ctx.save(); ctx.translate(140, 60); ctx.scale(0.45, 0.45); ctx.globalAlpha = 0.85; ghostHead({ eyes: 'white' }); ctx.restore(); }
+// ---------- 갑툭튀 그림 (scares.png) ----------
+// 그림이 아직 안 불렸으면 위의 코드 그림으로 대신 그린다.
+const SCR = new Image(); SCR.src = 'scares.png';
+const scrOK = () => SCR.complete && SCR.naturalWidth > 0;
+const SCF = {"face":[[0,0,139,118],[139,0,98,116]],"skull":[[237,0,72,103],[309,0,87,94]],"zombie":[[396,0,74,102],[470,0,86,93]],"lady":[[556,0,99,104],[655,0,84,95]],"crawl":[[739,0,126,82],[865,0,123,78]],"shadow":[[0,118,120,89],[120,118,77,89]],"eye":[[197,118,118,74],[315,118,114,65]],"doll":[[429,118,134,73],[563,118,113,63]],"sheet":[[676,118,122,97],[798,118,82,87]],"beast":[[880,118,114,97],[0,215,131,93]]};
+// 귀신마다 번갈아 보여 줄 그림 (두 장이면 움찔거린다)
+const GHOST_FR = { face: [SCF.face[0], SCF.face[1]], skull: [SCF.skull[0], SCF.zombie[0]], beast: [SCF.beast[0], SCF.beast[1]], sheet: [SCF.sheet[0], SCF.sheet[1]], eye: [SCF.eye[0], SCF.eye[1]], doll: [SCF.doll[0]], crawl: [SCF.crawl[0]], shadow: [SCF.shadow[0]], lady: [SCF.lady[0]] };
+// 장면마다 처음 나오는 귀신. 같은 장면을 다시 보면(죽고 다시 하기 등) 다음 귀신으로 돌려 가며 나온다.
+const GHOST_OF = { face: 'face', skull: 'skull', portrait: 'beast', hands: 'sheet', doll: 'doll', crawl: 'crawl', hang: 'shadow', lady: 'lady', eye: 'eye' };
+const GHOSTS = Object.values(GHOST_OF), scareSeen = {};
+function pickGhost(type) {
+  const g = GHOST_OF[type]; if (!g) return null;
+  const n = scareSeen[type] = (scareSeen[type] || 0) + 1;
+  return GHOSTS[(GHOSTS.indexOf(g) + n - 1) % GHOSTS.length];
+}
+function drawPix(img, f, w, h) { // 픽셀이 또렷하게 화면 가운데에 크게
+  const k = Math.min(w / f[2], h / f[3]);
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, f[0], f[1], f[2], f[3], -f[2] * k / 2, -f[3] * k / 2, f[2] * k, f[3] * k);
+  ctx.restore();
+}
+function scareGhost(g, upsideDown) {
+  const fs = GHOST_FR[g];
+  ctx.save(); if (upsideDown) ctx.rotate(Math.PI);
+  drawPix(SCR, fs[((now * 8) | 0) % fs.length], 620, 470);
+  ctx.restore();
+}
+function scareJackPix() { // 호박 머리 클로즈업과 팔 든 모습이 번갈아 번쩍
+  ctx.fillStyle = rg(0, 0, 420, 'rgba(255,90,0,0.35)', 'rgba(0,0,0,0)'); ctx.fillRect(-420, -320, 840, 640);
+  const w = SF.jack_walk[0];
+  if (((now * 7) | 0) % 3) drawPix(SPR, [w[0], w[1], w[2], 74], 640, 480);
+  else drawPix(SPR, SF.jack_scare[0], 640, 500);
+}
+const SCARE_ART = { jack: () => sprOK() ? scareJackPix() : scareJack(), face: scareFace, skull: scareFace, portrait: () => scarePortrait(), hang: scareHang, lady: scareLady, crawl: scareCrawl, doll: scareDoll, eye: scareEye, hands: scareHands };
+const SCB = document.createElement('canvas'); SCB.width = W * SC; SCB.height = H * SC; const sbc = SCB.getContext('2d');
+function drawScare() {
+  const s = scare, t = s.t, k = t / s.dur;
+  // 1) 그림을 따로 그려 둔다 (확 다가오는 줌)
+  const prev = ctx; ctx = sbc; ctx.setTransform(SC, 0, 0, SC, 0, 0); R(0, 0, W, H, '#000');
+  ctx.save(); ctx.translate(W / 2, H / 2);
+  const snap = MILD ? 1.05 : (t < 0.08 ? 2.1 - (t / 0.08) * 0.95 : 1.15 + Math.min(0.12, (t - 0.08) * 0.12));
+  const br = 1 + (MILD ? 0 : Math.sin(t * 32) * 0.015); ctx.scale(snap * br, snap * br);
+  if (s.ghost && scrOK()) scareGhost(s.ghost, s.type === 'hang'); else (SCARE_ART[s.type] || scareFace)();
+  ctx.restore(); ctx = prev;
+  // 2) 화면에 합치기: 흔들림, 이중 잔상, 찢어짐, 반전
+  R(0, 0, W, H, '#000');
+  const shk = MILD ? 3 : (1 - k) * 36 + 6, ox = rnd(-shk, shk), oy = rnd(-shk, shk);
+  ctx.drawImage(SCB, ox, oy, W, H);
+  if (!MILD) {
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3; ctx.drawImage(SCB, ox + rnd(8, 18), oy + rnd(-4, 4), W, H); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    if (t < 0.6) for (let i = 0; i < 6; i++) { const sy = Math.random() * H, hh = 4 + Math.random() * 34; ctx.drawImage(SCB, 0, sy * SC, W * SC, hh * SC, ox + rnd(-50, 50), sy + oy, W, hh); }
+    if (t < 0.07) R(0, 0, W, H, 'rgba(255,255,255,0.85)');
+    if (t < 0.4 && Math.random() < 0.3) { ctx.globalCompositeOperation = 'difference'; R(0, 0, W, H, '#fff'); ctx.globalCompositeOperation = 'source-over'; }
+    R(0, 0, W, H, `rgba(170,0,0,${0.35 * Math.abs(Math.sin(t * 22))})`);
+    for (let i = 0; i < 10; i++) R(0, Math.random() * H, W, Math.random() * 5, `rgba(255,255,255,${Math.random() * 0.18})`);
+  } else R(0, 0, W, H, 'rgba(0,0,0,0.35)');
+  postFX(2.5);
+  if (k > 0.82) R(0, 0, W, H, `rgba(0,0,0,${(k - 0.82) / 0.18})`);
+}
+function drawFlash() {
+  const t = flashFx.t;
+  if (t < 0.09) { R(0, 0, W, H, MILD ? 'rgba(200,210,240,.35)' : 'rgba(235,240,255,.92)'); return; }
+  if (t < 0.5) {
+    R(0, 0, W, H, 'rgba(160,170,210,.35)');
+    ctx.save(); ctx.translate(W / 2, H / 2 + 190); ctx.scale(3.6, 3.6); drawJack(0, 0, 0, MILD ? 0.5 : 0.92, true); ctx.restore();
+    R(0, 0, W, H, 'rgba(0,0,0,.35)');
+  } else R(0, 0, W, H, `rgba(0,0,0,${0.6 * (1 - (t - 0.5) / 0.25)})`);
+}
+
+// ---- 경고 · 타이틀 · 엔딩 · 게임 오버 ----
+function drawWarn() {
+  ctx.fillStyle = rg(W / 2, H / 2, 420, '#1a0608', '#000'); ctx.fillRect(0, 0, W, H);
+  const a = Math.min(1, modeT / 0.8); ctx.globalAlpha = a;
+  const cx = W / 2, ty = 74;
+  ctx.fillStyle = '#c8201a'; ctx.beginPath(); ctx.moveTo(cx, ty - 30); ctx.lineTo(cx + 34, ty + 28); ctx.lineTo(cx - 34, ty + 28); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1a0608'; ctx.beginPath(); ctx.moveTo(cx, ty - 18); ctx.lineTo(cx + 24, ty + 22); ctx.lineTo(cx - 24, ty + 22); ctx.closePath(); ctx.fill();
+  txt('!', cx, ty + 18, 30, '#ff4030', 'center', true);
+  txt('주의 · 공포 게임 경고', cx, 138, 24, '#ff6a50', 'center', true);
+  const lines = [
+    '이 게임에는 다음 내용이 들어 있습니다.',
+    '· 갑자기 튀어나오는 무서운 얼굴(갑툭튀)과 큰 비명 소리',
+    '· 어둡고 깜빡이는 화면, 번쩍이는 빛',
+    '· 무섭고 슬픈 이야기',
+    '',
+    '심장이 약한 분, 공포물에 약한 분,',
+    '번쩍이는 빛에 민감한 분은 플레이를 삼가 주세요.',
+    '이어폰을 쓴다면 소리를 조금 줄여 주세요.',
+  ];
+  lines.forEach((s, i) => txt(s, cx, 176 + i * 25, 15, i === 0 ? '#f0e0d8' : i >= 5 ? '#ffb0a0' : '#d8c8c0', 'center'));
+  panel(cx - 220, 382, 440, 50, 0.9);
+  txt('갑툭튀 세기', cx - 200, 412, 15, '#f0d8b0', 'left', true);
+  const opt = (label, on, x) => { if (on) R(x - 6, 394, 148, 26, 'rgba(255,120,60,0.2)'); txt((on ? '▶ ' : '   ') + label, x, 412, 15, on ? '#ffc080' : '#8a7a70'); };
+  opt('보통', !MILD, cx - 90); opt('순한 맛', MILD, cx + 40);
+  txt(MILD ? '비명 소리가 작고, 화면이 번쩍이지 않아요.' : '원래 세기 그대로 나와요.', cx, 448, 12, '#a89888', 'center');
+  if (modeT > 1 && Math.sin(now * 4) > -0.3) txt('←→ 세기 바꾸기   ·   Enter 동의하고 계속', cx, 470, 14, '#f0e0d0', 'center');
+  ctx.globalAlpha = 1;
+}
+let TREES = null;
+function makeTrees() {
+  const c = document.createElement('canvas'); c.width = W * SC; c.height = H * SC; const g = c.getContext('2d'); if (!g.scale) return null;
+  g.scale(SC, SC); g.strokeStyle = '#020102'; g.lineCap = 'round';
+  const br = (x, y, a, l, w, d) => { if (d > 9 || l < 2) return; const ex = x + Math.cos(a) * l, ey = y + Math.sin(a) * l; g.lineWidth = w; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo((x + ex) / 2 + Math.sin(d * 3) * 3, (y + ey) / 2, ex, ey); g.stroke(); br(ex, ey, a - 0.3 - hash(d, l | 0) * 0.4, l * 0.74, w * 0.68, d + 1); br(ex, ey, a + 0.25 + hash(l | 0, d) * 0.4, l * 0.7, w * 0.68, d + 1); };
+  br(40, 480, -Math.PI / 2 + 0.15, 70, 14, 0); br(600, 480, -Math.PI / 2 - 0.2, 64, 13, 0); br(150, 480, -Math.PI / 2 + 0.05, 38, 7, 2);
+  return c;
+}
+const BATS = Array.from({ length: 7 }, () => ({ x: Math.random() * W, y: 50 + Math.random() * 150, s: 30 + Math.random() * 40, p: Math.random() * 6 }));
+const STARS = Array.from({ length: 70 }, () => [Math.random() * W, Math.random() * 260, Math.random()]);
+const TITLE_IMG = new Image(); TITLE_IMG.src = 'thumbnail.png';
+function drawTitle() {
+  if (TITLE_IMG.complete && TITLE_IMG.naturalWidth > 0) { // 썸네일 그림을 시작 화면으로
+    R(0, 0, W, H, '#000');
+    const k = 432 / TITLE_IMG.naturalHeight, iw = TITLE_IMG.naturalWidth * k, zoom = 1 + Math.sin(now * 0.3) * 0.008;
+    ctx.save(); ctx.translate(W / 2, 216); ctx.scale(zoom, zoom); ctx.drawImage(TITLE_IMG, -iw / 2, -216, iw, 432); ctx.restore();
+    R(0, 360, W, 120, vg(360, 72, 'rgba(0,0,0,0)', 'rgba(0,0,0,1)'));
+    for (const b of BATS) { b.x += b.s * 0.016; if (b.x > W + 20) { b.x = -20; b.y = 50 + Math.random() * 150; } const f = Math.sin(now * 12 + b.p) * 6; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(b.x - 11, b.y - f); ctx.quadraticCurveTo(b.x - 5, b.y - 2, b.x, b.y + 2); ctx.quadraticCurveTo(b.x + 5, b.y - 2, b.x + 11, b.y - f); ctx.quadraticCurveTo(b.x + 5, b.y + 1, b.x, b.y - 1); ctx.quadraticCurveTo(b.x - 5, b.y + 1, b.x - 11, b.y - f); ctx.fill(); }
+    if (Math.sin(now * 4) > -0.3) txt('Enter 또는 Space 를 눌러 시작', W / 2, 440, 18, '#f0e0d0', 'center');
+    txt('방향키·WASD 이동   Shift 달리기   Space 조사·넘기기' + (MILD ? '   (갑툭튀: 순한 맛)' : ''), W / 2, 466, 13, '#9a8a8a', 'center');
+    postFX(0.7);
+    return;
+  }
+  ctx.fillStyle = vg(0, H, '#04030a', '#24101e'); ctx.fillRect(0, 0, W, H);
+  for (const [sx, sy, b] of STARS) C(sx, sy, 0.5 + b * 0.6, `rgba(255,255,240,${0.2 + 0.5 * b * (0.7 + 0.3 * Math.sin(now * 2 + sx))})`);
+  ctx.fillStyle = rg(480, 110, 170, 'rgba(255,230,180,0.28)', 'rgba(255,230,180,0)'); ctx.fillRect(300, -60, 360, 340);
+  ctx.fillStyle = rg(480, 110, 50, '#fbf4dc', '#c8bc98', 466, 96); ctx.beginPath(); ctx.arc(480, 110, 48, 0, 7); ctx.fill();
+  for (const [mx, my, mr] of [[465, 98, 8], [497, 124, 11], [488, 92, 5], [470, 128, 6]]) C(mx, my, mr, 'rgba(120,110,90,0.18)');
+  for (let i = 0; i < 3; i++) { const cx = ((now * (8 + i * 4) + i * 260) % (W + 300)) - 150; ctx.fillStyle = 'rgba(20,12,24,0.55)'; ctx.beginPath(); ctx.ellipse(cx, 90 + i * 40, 120, 14, 0, 0, 7); ctx.fill(); }
+  for (const b of BATS) { b.x += b.s * 0.016; if (b.x > W + 20) { b.x = -20; b.y = 50 + Math.random() * 150; } const f = Math.sin(now * 12 + b.p) * 6; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(b.x - 11, b.y - f); ctx.quadraticCurveTo(b.x - 5, b.y - 2, b.x, b.y + 2); ctx.quadraticCurveTo(b.x + 5, b.y - 2, b.x + 11, b.y - f); ctx.quadraticCurveTo(b.x + 5, b.y + 1, b.x, b.y - 1); ctx.quadraticCurveTo(b.x - 5, b.y + 1, b.x - 11, b.y - f); ctx.fill(); }
+  P([0, 330, 120, 300, 260, 315, 400, 295, 520, 310, 640, 300, 640, 480, 0, 480], '#0a060c');
+  const M2 = '#050306';
+  P([110, 400, 110, 260, 150, 225, 190, 260, 190, 240, 250, 180, 310, 240, 310, 215, 330, 150, 350, 215, 350, 240, 420, 240, 470, 200, 520, 240, 530, 240, 530, 400], M2);
+  R(140, 205, 10, 30, M2); R(480, 175, 9, 30, M2); P([322, 150, 330, 120, 338, 150], M2);
+  const win = (wx, wy, lit) => { R(wx - 1, wy - 1, 14, 20, '#140c0a'); R(wx, wy, 12, 18, lit ? `rgba(230,130,40,${0.75 + 0.25 * Math.sin(now * 6 + wx)})` : '#1a1420'); R(wx + 5.5, wy, 1, 18, '#140c0a'); R(wx, wy + 8, 12, 1, '#140c0a'); if (lit) { ctx.fillStyle = rg(wx + 6, wy + 9, 20, 'rgba(255,150,50,0.2)', 'rgba(255,150,50,0)'); ctx.fillRect(wx - 14, wy - 11, 40, 40); } };
+  [[130, 280, 0], [160, 280, 1], [215, 270, 0], [250, 270, 1], [285, 270, 0], [370, 270, 0], [400, 270, 1], [455, 270, 0], [490, 270, 0], [130, 340, 1], [215, 340, 0], [400, 340, 0], [490, 340, 1]].forEach(([a, b, c]) => win(a, b, c));
+  C(330, 200, 9, '#140c0a'); C(330, 200, 7, Math.sin(now * 7) > -0.6 ? '#ff9a2a' : '#7a3a0a');
+  if (Math.sin(now * 0.9) > 0.8) { C(327, 199, 1.3, '#fff6a0'); C(333, 199, 1.3, '#fff6a0'); }
+  R(305, 345, 50, 55, '#140a08'); R(306, 346, 23, 54, '#2a1a10'); R(331, 346, 23, 54, '#2a1a10');
+  for (let i = 0; i < 64; i++) { const fx = i * 10 + 4; R(fx, 400, 2, 30, '#020102'); P([fx - 1, 400, fx + 3, 400, fx + 1, 394], '#020102'); }
+  R(0, 410, W, 3, '#020102');
+  if (!TREES) TREES = makeTrees(); if (TREES) ctx.drawImage(TREES, 0, 0, W, H);
+  R(0, 430, W, 50, '#030203');
+  for (let i = 0; i < 4; i++) { const fx = ((now * (6 + i * 3) + i * 200) % (W + 400)) - 200; ctx.fillStyle = rg(fx, 420 + i * 12, 220, 'rgba(140,120,150,0.14)', 'rgba(140,120,150,0)'); ctx.fillRect(fx - 220, 300, 440, 240); }
+  ctx.save(); ctx.translate(70, 445); softShadow(0, 20, 34, 6, 0.6); pumpkinBody(0, 0, 32, 25, true); stem(0, -24, 2.4); ctx.restore();
+  ctx.save(); ctx.translate(575, 452); softShadow(0, 16, 26, 5, 0.6); pumpkinBody(0, 0, 25, 19, true); stem(0, -18, 2); ctx.restore();
+  ctx.shadowColor = '#ff5a00'; ctx.shadowBlur = 28; txt('흑월 저택', W / 2, 92, 64, '#ffb060', 'center', true); ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(150,10,10,0.8)'; for (let i = 0; i < 6; i++) { const dx = W / 2 - 110 + i * 44 + hash(i, 1) * 10, len = 6 + ((now * 6 + i * 3) % 14); R(dx, 96, 2, len, 'rgba(150,10,10,0.7)'); C(dx + 1, 96 + len, 1.6, 'rgba(150,10,10,0.7)'); }
+  txt('― 할로윈의 밤 ―', W / 2, 136, 20, '#d8a0a0', 'center');
+  if (Math.sin(now * 4) > -0.3) txt('Enter 또는 Space 를 눌러 시작', W / 2, 432, 18, '#f0e0d0', 'center');
+  txt('방향키·WASD 이동   Shift 달리기   Space 조사·넘기기' + (MILD ? '   (갑툭튀: 순한 맛)' : ''), W / 2, 462, 13, '#9a8a8a', 'center');
+  postFX(0.7);
+}
+function drawEnd() {
+  R(0, 0, W, H, '#000'); const a = Math.min(1, modeT / 2); ctx.globalAlpha = a;
+  const tru = END === 'true';
+  txt(tru ? 'TRUE END' : 'NORMAL END', W / 2, 90, 18, tru ? '#ffd890' : '#c0a0a0', 'center', true);
+  ctx.shadowColor = tru ? '#ffaa40' : '#802020'; ctx.shadowBlur = 20;
+  txt(tru ? '할로윈의 약속' : '도망친 밤', W / 2, 140, 40, tru ? '#ffc070' : '#e08080', 'center', true); ctx.shadowBlur = 0;
+  const lines = tru
+    ? ['30년 동안 꺼져 있던 다락의 등불.', '그 빛을 따라, 한 소녀가 오랜 친구를 데리러 왔다.', '그날 이후 흑월 저택에서 사라지는 사람은 없었다.', '다만 할로윈 밤이면, 다락 창문에', '두 개의 불빛이 나란히 깜빡인다는 소문만 남았다.']
+    : ['하루와 준은 무사히 집으로 돌아왔다.', '하지만 잭은 아직도 그 저택에서 기다리고 있다.', '누군가 등불의 진짜 의미를 알려 줄 때까지.', '', '힌트: 일기 5장을 모두 읽은 뒤 등불을 켜면…?'];
+  lines.forEach((s, i) => txt(s, W / 2, 205 + i * 32, 17, i === 4 && !tru ? '#ffb060' : '#d8d0c8', 'center'));
+  const tm = Math.floor(S.time); txt(`플레이 시간 ${Math.floor(tm / 60)}분 ${tm % 60}초 · 찾은 일기 ${S.pages}/5`, W / 2, 400, 14, '#9a8a80', 'center');
+  if (modeT > 2.5 && Math.sin(now * 4) > -0.3) txt('Enter 를 눌러 타이틀로', W / 2, 440, 15, '#f0e0d0', 'center');
+  ctx.globalAlpha = 1; postFX(0.6);
+}
+function drawDead() {
+  R(0, 0, W, H, '#000'); const a = Math.min(1, modeT / 1);
+  ctx.globalAlpha = a * (0.22 + 0.08 * Math.sin(now * 5)); ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(0.8, 0.8); scareJack(); ctx.restore();
+  ctx.globalAlpha = a; R(0, 0, W, H, 'rgba(0,0,0,.55)');
+  ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 20; txt('잡히고 말았다…', W / 2, 200, 44, '#e04040', 'center', true); ctx.shadowBlur = 0;
+  txt('잭과 영원히 놀게 되었다.', W / 2, 245, 17, '#c8a0a0', 'center');
+  if (modeT > 1.2) txt('Enter 를 눌러 마지막 지점부터 다시 하기', W / 2, 330, 17, '#f0e0d0', 'center');
+  ctx.globalAlpha = 1; postFX(1.2);
+}
+
+// ---- 숨어 있을 때: 옷장(커튼) 안에서 보는 1인칭 화면 ----
+function drawHideView() {
+  const o = S.hidden, cur = o.t === 'curtain', m = MAPS[S.map];
+  const spotX = (o.x + o.w / 2) * T, spotY = (o.y + o.h) * T + 22;
+  const grab = M.grab != null ? M.grab : null;
+  const open = grab != null ? clamp(1 - grab / 0.3, 0, 1) : 0; // 마지막 순간 문이 확 열린다
+  const shk = grab != null && grab < 0.9 ? 5 : 0;
+  const gw = (cur ? 34 : 26) + open * W, gx = W / 2 + Math.sin(now * 1.3) * 2;
+  R(0, 0, W, H, '#000');
+  // 1) 틈 너머로 보이는 방
+  ctx.save(); ctx.beginPath(); ctx.rect(gx - gw / 2, 0, gw, H); ctx.clip();
+  R(0, 0, W, H * 0.62, vg(0, H * 0.62, sh(m.wall, -0.6), sh(m.wall, -0.35)));
+  R(0, H * 0.62, W, H * 0.38, vg(H * 0.62, H * 0.38, '#140e0c', '#2a1e16'));
+  if (M.active && sprOK()) {
+    const dx = M.x - spotX, d = Math.hypot(dx, M.y - spotY), near = grab != null ? 1 : clamp(1 - d / 300, 0, 1);
+    if (near > 0) {
+      const k = 0.8 + near * 4.4, jx = gx + clamp(dx, -220, 220) * (1 - near) * 0.6, jy = H * 0.62 + near * H * 0.8;
+      ctx.fillStyle = rg(jx, jy - 70 * k, 40 * k, 'rgba(255,140,30,0.3)', 'rgba(255,140,30,0)'); ctx.fillRect(jx - 40 * k, jy - 110 * k, 80 * k, 80 * k);
+      drawFrame(SF.jack_walk[Math.floor(M.walk * 6) % SF.jack_walk.length], jx, jy, k, false, clamp(near * 1.5, 0, 1));
+    }
+  }
+  ctx.restore();
+  // 2) 안쪽에서 본 문짝 (커튼이면 천 주름)
+  const col = cur ? '#4a1018' : (o.tint || '#4a2c1a');
+  for (const s of [-1, 1]) {
+    const x0 = s < 0 ? -10 : gx + gw / 2, x1 = s < 0 ? gx - gw / 2 : W + 10, w = x1 - x0, ox = rnd(-shk, shk);
+    if (w <= 0) continue;
+    ctx.save(); ctx.translate(ox, rnd(-shk, shk) * 0.5);
+    R(x0, 0, w, H, hg(x0, w, sh(col, s < 0 ? -0.72 : -0.45), sh(col, s < 0 ? -0.45 : -0.72)));
+    if (cur) for (let x = x0 + 12; x < x1; x += 26) R(x, 0, 10, H, `rgba(0,0,0,${0.25 + 0.1 * Math.sin(x + now)})`);
+    else {
+      for (let x = x0 + 40; x < x1 - 10; x += 48) L(x, 0, x, H, 'rgba(0,0,0,0.55)', 2);
+      for (const y of [H * 0.12, H * 0.5, H * 0.88]) R(x0, y - 6, w, 12, 'rgba(0,0,0,0.3)');
+    }
+    const edge = s < 0 ? x1 - 3 : x0; R(edge, 0, 3, H, 'rgba(255,190,120,0.16)'); // 틈 가장자리에 스미는 빛
+    ctx.restore();
+  }
+  // 3) 어두운 테두리와 글자
+  R(0, 0, W, H, rg(W / 2, H / 2, H * 0.85, 'rgba(0,0,0,0)', 'rgba(0,0,0,0.8)'));
+  if (grab != null) { if (grab < 0.9) txt('…!!', W / 2, H - 40, 28, '#ff6060', 'center', true); }
+  else txt(M.active ? '(바로 밖에 무언가가 있다… 숨을 죽이자)' : '숨어 있다…   Space: 나오기', W / 2, H - 30, 15, M.active ? '#e07070' : '#9a8a80', 'center');
+}
+
+// =========================================================
+// 화면 그리기 전체
+// =========================================================
+function render(dt) {
+  ctx.setTransform(SC, 0, 0, SC, 0, 0); ctx.globalAlpha = 1;
+  if (mode === 'warn') return drawWarn();
+  if (mode === 'title') return drawTitle();
+  if (mode === 'end') return drawEnd();
+  if (mode === 'dead') return drawDead();
+  ctx.save();
+  if (shakeT > 0) { const s = shakeT * (MILD ? 4 : 12); ctx.translate(rnd(-s, s), rnd(-s, s)); }
+  ctx.drawImage(bg, 0, 0, W, H);
+  const m = MAPS[S.map], list = [];
+  for (const o of m.objs) if (vis(o)) list.push({ y: o.wall ? -1 : (o.sy != null ? o.sy * T : (o.y + o.h) * T), f: () => drawObj(o) });
+  if (!S.hidden) list.push({ y: S.y, f: () => drawHuman(S.x, S.y, S.dir, walkT, ST_HARU, moving && !busy(), 1, false, false, running) });
+  if (M.active) list.push({ y: M.y, f: () => drawJack(M.x, M.y, M.walk, M.delay > 0 ? 1 - M.delay * 0.5 : 1) });
+  for (const a of actors) list.push({ y: a.y, f: () => drawActor(a) });
+  list.sort((a, b) => a.y - b.y).forEach(d => d.f());
+  for (let i = PUFFS.length - 1; i >= 0; i--) { const p = PUFFS[i]; p.t += dt; if (p.t > 0.5) { PUFFS.splice(i, 1); continue; } const k = p.t / 0.5; C(p.x, p.y - k * 4, 2 + k * 7, `rgba(170,150,130,${0.3 * (1 - k)})`); }
+  drawDust(dt);
+  drawDark();
+  ctx.restore();
+  if (M.chase) {
+    const p = 0.25 + 0.12 * Math.sin(now * 8), g = ctx.createRadialGradient(W / 2, H / 2, 150, W / 2, H / 2, 420);
+    g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(140,0,0,${p})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  if (S.hidden) drawHideView();
+  postFX(1);
+  if (afterT > 0) { ctx.globalAlpha = afterT * 0.22; ctx.drawImage(SCB, 0, 0, W, H); ctx.globalAlpha = 1; }
+  if (F.started && fade < 0.99) drawHUD();
+  if (fade > 0) R(0, 0, W, H, `rgba(0,0,0,${fade})`);
+  if (dialog) drawDialog();
+  if (choice) drawChoice();
+  if (lock) drawLock();
+  if (flashFx) drawFlash();
+  if (scare) drawScare();
+}
+
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(0.05, Math.max(0, (t - last) / 1000)); last = t; now += dt;
+  update(dt); render(dt); pressed.clear();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
