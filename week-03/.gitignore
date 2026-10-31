@@ -4,3 +4,4 @@ frames/
 build/
 dist/
 *.spec
+__pycache__/

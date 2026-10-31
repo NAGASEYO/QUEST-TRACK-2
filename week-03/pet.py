@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMenu, QWidget
 
 HERE = Path(__file__).parent
 FRAMES = HERE / "frames"
@@ -29,6 +29,8 @@ class Pet(QWidget):
         self.picture.setFixedSize(SIZE, SIZE)
         self.setFixedSize(SIZE, SIZE)
 
+        self.drag_offset = None   # 끄는 중일 때, 마우스와 펫 왼쪽 위 모서리 사이 거리
+
         self.show_frame(4)
         self.move_to_corner()
 
@@ -40,9 +42,28 @@ class Pet(QWidget):
         area = QApplication.primaryScreen().availableGeometry()
         self.move(area.right() - SIZE - MARGIN + 1, area.bottom() - SIZE + 1)
 
+    # 왼쪽 버튼으로 끌어서 옮기기
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_offset = event.globalPosition().toPoint() - self.pos()
+
+    def mouseMoveEvent(self, event):
+        if self.drag_offset is not None:
+            self.move(event.globalPosition().toPoint() - self.drag_offset)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_offset = None
+
+    # 오른쪽 클릭 메뉴
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        menu.addAction("끄기", QApplication.quit)
+        menu.exec(event.globalPos())
+
 
 def main():
-    # 끄기 메뉴가 생기기 전까지는 실행한 창에서 Ctrl+C 로 끈다
+    # 실행한 창에서 Ctrl+C 로도 끌 수 있게 한다
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     app = QApplication(sys.argv)
