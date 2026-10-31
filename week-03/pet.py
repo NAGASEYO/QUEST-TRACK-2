@@ -4,7 +4,8 @@ import signal
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from pynput import keyboard
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QWidget
 
@@ -13,6 +14,30 @@ FRAMES = HERE / "frames"
 
 SIZE = 160         # 펫 크기 (cut_frames.py 의 SIZE 와 같아야 함)
 MARGIN = 16        # 화면 오른쪽 끝과 펫 사이 거리 (픽셀)
+COUNT_H = 24       # 펫 아래 횟수 글자 칸 높이 (픽셀)
+
+
+class KeyCounter(QObject):
+    """다른 창에서 키가 눌린 것을 알아차리고 pressed 신호만 보낸다.
+
+    어떤 키인지는 받자마자 버린다. 저장도 전송도 화면 출력도 하지 않는다.
+    """
+    pressed = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.listener = keyboard.Listener(on_press=self.on_press)
+        self.listener.daemon = True
+
+    def on_press(self, *_):
+        # pynput 이 넘겨주는 키 값(_)은 쓰지 않는다. "눌렸다"는 신호만 보낸다.
+        self.pressed.emit()
+
+    def start(self):
+        self.listener.start()
+
+    def stop(self):
+        self.listener.stop()
 
 
 class Pet(QWidget):
@@ -27,20 +52,38 @@ class Pet(QWidget):
 
         self.picture = QLabel(self)
         self.picture.setFixedSize(SIZE, SIZE)
-        self.setFixedSize(SIZE, SIZE)
+
+        # 고양이 아래 횟수 글자
+        self.count = 0
+        self.count_label = QLabel(self)
+        self.count_label.setGeometry(0, SIZE, SIZE, COUNT_H)
+        self.count_label.setAlignment(Qt.AlignCenter)
+        self.count_label.setStyleSheet(
+            "color: white; background: rgba(0, 0, 0, 150); border-radius: 8px;"
+            "font-size: 13px; font-weight: bold;")
+
+        self.setFixedSize(SIZE, SIZE + COUNT_H)
 
         self.drag_offset = None   # 끄는 중일 때, 마우스와 펫 왼쪽 위 모서리 사이 거리
 
         self.show_frame(4)
+        self.show_count()
         self.move_to_corner()
 
     def show_frame(self, n):
         self.picture.setPixmap(self.frames[n])
 
+    def show_count(self):
+        self.count_label.setText(f"오늘 {self.count:,}")
+
+    def add_one(self):
+        self.count += 1
+        self.show_count()
+
     def move_to_corner(self):
         # availableGeometry 는 작업표시줄을 뺀 화면 크기라서, 아래에 붙여도 작업표시줄을 가리지 않는다
         area = QApplication.primaryScreen().availableGeometry()
-        self.move(area.right() - SIZE - MARGIN + 1, area.bottom() - SIZE + 1)
+        self.move(area.right() - self.width() - MARGIN + 1, area.bottom() - self.height() + 1)
 
     # 왼쪽 버튼으로 끌어서 옮기기
     def mousePressEvent(self, event):
@@ -68,6 +111,13 @@ def main():
 
     app = QApplication(sys.argv)
     pet = Pet()
+
+    # 키 듣기는 따로 돌아가므로, 신호로 받아서 펫 숫자를 올린다
+    counter = KeyCounter()
+    counter.pressed.connect(pet.add_one)
+    counter.start()
+    app.aboutToQuit.connect(counter.stop)
+
     pet.show()
     sys.exit(app.exec())
 
