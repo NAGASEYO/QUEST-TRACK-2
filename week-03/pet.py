@@ -11,7 +11,8 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QWidget
 
-HERE = Path(__file__).parent
+# exe 로 묶어서 실행하면 그림이 임시 폴더(sys._MEIPASS)에 풀리므로 거기서 찾는다
+HERE = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 FRAMES = HERE / "frames"
 
 SIZE = 160         # 펫 크기 (cut_frames.py 의 SIZE 와 같아야 함)
